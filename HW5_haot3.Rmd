@@ -1,0 +1,700 @@
+---
+title: 'STAT 542 / CS 598: Homework 5'
+author: "Hao Tang ID: haot3"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: 2
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '2'
+---
+
+```{r setup, include=FALSE}
+  knitr::opts_chunk$set(include = TRUE)  # TRUE for solution; FALSE for questions set
+
+  knitr::opts_chunk$set(echo = TRUE)
+  knitr::opts_chunk$set(message = FALSE)
+  knitr::opts_chunk$set(warning = FALSE)
+  knitr::opts_chunk$set(fig.height = 6, fig.width = 8, out.width = '50%', fig.align = "center")
+  options(width = 90)
+```
+
+```{css, echo=FALSE}
+.solution {
+background-color: #e6ffe6;
+}
+```
+
+```{r, echo=TRUE, include=TRUE}
+rm(list = ls(all = TRUE))
+
+list.of.packages <- c("knitr","tidyverse","mixtools","ElemStatLearn","ggpubr", "ggplot2")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)){
+  install.packages(new.packages, repos = "http://cran.us.r-project.org")
+  }
+library(knitr)
+library(tidyverse)
+library(mixtools)
+library(ElemStatLearn)
+library(ggplot2)
+library(ggpubr)
+```
+
+## Question 1 [50 Points] K-Means Clustering
+
+Let's consider coding a K-means algorithm. Perform the following: 
+
+  * Load the `zip.train` (handwritten digit recognition) data from the ElemStatLearn package, and the goal is to identify clusters of digits based on only the pixels. 
+  
+
+```{r q1a1, echo=TRUE, include=TRUE}
+zip.train = zip.train
+```
+
+
+  * [15 Points] Write your own code of k-means that iterates between two steps, and stop when the cluster membership does not change. 
+    + updating the cluster means given the cluster membership
+    + updating the cluster membership based on cluster means
+    
+**Solution**
+
+```{r q1a2, echo=TRUE, include=TRUE}
+
+## The below method is aim to final converged.
+## Can be change to total within-cluster sum
+mykmeans = function(k, data, init.matrix, max.iter){
+  
+  if(k == 1){
+    count = 0
+    center = apply(data,2,mean)
+    cluster = rep(1,dim(data)[1])
+    old.wc.variation = sum(t(t(data) - center) ^ 2)
+    return(list(centers, old.wc.variation, count,cluster))
+  }
+
+  data = as.matrix(data)
+  centers = init.matrix
+  new.centers = centers
+  n1 = k
+  n2 = dim(data)[1]
+  count = 0
+  new.wc.variation = 0
+  old.wc.variation = 1000000000
+  cluster = rep(1:k, n2/k)
+  cluster = append(cluster, rep(k,n2 - length(cluster)))
+  #while(new.wc.variation < old.wc.variation & count<=20)
+  while(count <= max.iter){
+    q = 0
+    result = cbind(data, cluster) ## must redefine the first result
+    old.wc.variation = sum(sapply(1:k,
+    function(c) q = sum(t(t(result[result[,257]==c,-257]) - as.vector(t(new.centers[c,]))) ^ 2)))
+      
+    old.cluster = rep(0,n2)
+    if (count != 0){
+      centers = new.centers
+      old.cluster = cluster
+    }
+    
+    # Updating the cluster membership based on cluster means, 
+    # "E - step" in kmeans
+    data.formed = matrix(rep(rowSums(data ^ 2), each = n1), 
+                               ncol=n1, byrow=TRUE)
+    centers.formed = matrix(rep(rowSums(centers ^ 2), each=n2)
+                         ,nrow=n2)
+  
+    diff.sum = data.formed + centers.formed - 2 * data %*% t(centers)
+    
+    cluster = apply(diff.sum[,], which.min, MARGIN = 1)
+    
+    result = cbind(data, cluster)
+    
+    # Updating the cluster means given the cluster membership, 
+    # "M - step" in kmeans
+    
+    new.centers = t(sapply(1:k, function(c) f = colMeans(result[result[,257]==c,][,-257])))
+    
+    
+    new.wc.variation = sum(sapply(1:k, 
+    function(c) q = sum(t(t(data[cluster==c,-257]) - as.vector(t(new.centers[c,]))) ^ 2)))
+
+    # all.equal(new.wc.variation, old.wc.variation) use this 
+    # criteria will get a bit different result. Compare cluster will stop a bit earlier.
+    if(all.equal(cluster,old.cluster) == TRUE  & count!=0){
+      return(list(centers, old.wc.variation,count,cluster))
+      break
+    }
+    count = count + 1
+  }
+  return(list(centers, old.wc.variation, count-1, cluster))
+}
+```
+
+
+
+**---------------------------------------------------------------------------------------------------------------** 
+
+  * [10 Points] Perform your algorithm with one random initialization with $k = 5$
+    + For this question, compare your cluster membership to the true digits. What are the most prevalent digits in each of your clusters?
+    
+**Solution:**
+
+***mykmeans() method***
+
+- Below we try the mykmeans() method with one initial value.
+```{r q1b1, echo=TRUE, include=TRUE}
+set.seed(7)
+max.iter= 50
+k = 5
+n = dim(zip.train)[1]
+init.matrix = zip.train[sample(c(1:n),k),-1]
+h = mykmeans(k, zip.train[,-1], init.matrix, max.iter)
+```
+
+
+- The initial centers are ramdomly seleted observations in the dataset. So we can ensure we will have observations to be assigned to certain centers at the beginning of the k-means process.
+- Then we plot the frequency to the zip.train digits in each cluster in below barplot.
+
+```{r q1b2, echo=TRUE, include=TRUE, out.width='1.0\\textwidth', out.height='0.8\\textwidth', fig.height=8, fig.width = 10,}
+par(mfrow=c(2,3),mar=c(2.7, 1.8, 3.8, 1.2),oma = c(6, 3, 6, 3))
+prevalent = c()
+for (i in 1:k){
+  aa = barplot(table(zip.train[h[[4]] == i,1]), names.arg = names(table(zip.train[h[[4]] == i,1])), 
+               col = "green",main = paste("True Digits Frequency Plot in",toString(i),"cluster"))
+  prevalent = append(prevalent,names(sort(table(zip.train[h[[4]] == i,1]), decreasing = T)[1]))
+}
+```
+
+- So the prevalent number is as below table:
+
+```{r q1b3, echo=TRUE, include=TRUE}
+
+display = matrix(prevalent, nrow = 1)
+colnames(display) = c("Cluster 1","Cluster 2","Cluster 3","Cluster 4","Cluster 5")
+rownames(display) = c("Prevalent Digit")
+kable(display, caption = "Prevalent Digits in Each Cluster in mykmeans()")
+```
+
+***Built-in kmeans() method***
+
+- Let's try the `kmeans()` in R and use barplot to display the digits' frequency again. Then I'll present the prevalent table to each cluster. Here the initial centers are picked by the built-in kmeans().
+
+```{r q1b4, echo=TRUE, include=TRUE, out.width='1.0\\textwidth', out.height='0.8\\textwidth',fig.height=8, fig.width = 10}
+set.seed(1)
+hk = kmeans(zip.train[,-1],centers = 5)
+par(mfrow=c(2,3),mar=c(2.7, 1.8, 3.8, 1.2),oma = c(6, 3, 6, 3))
+prevalent.k = c()
+for (i in 1:k){
+  aa = barplot(table(zip.train[hk$cluster == i,1]), names.arg =
+  names(table(zip.train[hk$cluster == i,1])), 
+col = "green",main = paste("True Digits Frequency Plot in",toString(i),"cluster\n"))
+  prevalent.k = append(prevalent.k,names(sort(table(zip.train[hk$cluster == i,1]),
+  decreasing = T)[1]))
+
+}
+```
+```{r q1b5, echo=TRUE, include=TRUE}
+display.k = matrix(prevalent.k, nrow = 1)
+colnames(display.k) = c("Cluster 1","Cluster 2","Cluster 3","Cluster 4","Cluster 5")
+rownames(display) = c("Prevalent Digit")
+kable(display.k, caption = "Prevalent Digits in Each Cluster in Built-in kmeans()")
+
+```
+
+- Since both mykmeans and built-in kmeans starts from a random initial center, the true digits frequency (on the barplot) in the k = 5 cluster may be different from each other but still close. 
+- On the other hand, We can see the most prevalent digits in each clustering are the same but with different order from built-in kmeans() and mykmeans().
+- If we change the random seed or the initial value, or reset the nstart of kmeans(), the clustering detail and order may change, but the five prevalent digits will likely keep the same since their underneath algorithm are the same.
+  
+**---------------------------------------------------------------------------------------------------------------** 
+    
+  * [10 Points] Perform your algorithm with 10 independent initiations with $k = 5$ and record the best
+    + For this question, plot your clustering results on a two-dimensional plot, where the two axis are the first two principle components of your data
+    
+**Solution:**
+
+***mykmeans()  method***
+
+- I randomly generate 10 initail centers as the input to mykmeans() and there will be `10` corresponding clusterings. 
+    
+```{r q1c1, echo=TRUE, include=TRUE}
+set.seed(3) # Set one seed only here
+max.iter= 50
+k = 5
+n = dim(zip.train)[1]
+# b = Sys.time()
+init.matrix.all = list()
+for (i in 1:10){
+  init.matrix = zip.train[sample(c(1:n),k),-1]
+  init.matrix.all[[i]] = init.matrix
+  assign(paste("h", toString(i), sep = ''), mykmeans(k, zip.train[,-1], init.matrix, max.iter))
+
+}
+# It costs ~33 s to run this chuck
+# Sys.time() - b
+```
+
+```{r q1c2, echo=TRUE, include=TRUE}
+min.value = 1e+10
+min = 100
+mykmeans.tot.wss = rep(0,10)
+for (i in 1:10){
+  mykmeans.tot.wss[i] = get(paste("h", toString(i), sep = ''))[[2]]
+  if(get(paste("h", toString(i), sep = ''))[[2]] < min.value){
+    min.value = get(paste("h", toString(i), sep = ''))[[2]]
+    min  = i
+  }
+}
+# tot.withinss = 639700.8
+# The randomness does affect the break-tie result
+# print(mykmeans.tot.wss)
+
+```
+
+
+- Based on the the total within cluster sum of square, the best result is the `r min`th result. In fact, there're three clusterings with the same minimum **total within cluster sum of square**.   
+
+***Built-in kmeans() method***
+
+- I also input nstart = 10 into the built-in kmeans() so it will generate the final result based on 10 different random initail centers.
+
+```{r q1c3, echo=TRUE, include=TRUE}
+hk10 = kmeans(zip.train[,-1], nstart = 10, centers = 5)
+# tot.withinss = 639698.9
+```
+
+***PCA plot to both methods***
+
+- The first plot below is the best clustering from mykmeans() with the first two PCA. The first column of digit from zip.train is removed in the prcomp() function.
+
+- And the second PCA plot is based on best clustering from built-in kmenas() with 10 random initial centers (nstart = 10). kmeans will choose the best result generated from these 10 random initial centers with the lowest **total within cluster sum of square**. 
+
+```{r q1c4, echo=TRUE, include=TRUE, out.width='1.0\\textwidth',  fig.height=5, fig.width = 10, out.height='0.9\\textwidth' }
+
+
+q1 = ggplot(data = data.frame(prcomp(zip.train[,-1], center = T)$x), aes(x=PC1, y=PC2)) + 
+    geom_point(color = h7[[4]], size = 1.5)
+q1 = q1 + ggtitle("Clustering from mykmeans of 10 random initial centers") + 
+     theme(plot.title = element_text(size = 11, lineheight=0.8, hjust = 0.5, face="bold"))
+
+ 
+q2 = ggplot(data = data.frame(prcomp(zip.train[,-1], center = T)$x), aes(x=PC1, y=PC2)) + 
+    geom_point(color = hk10$cluster, size = 1.5)
+q2 = q2 + ggtitle("Clustering from Built-in kmeans of 10 random initial centers") + 
+     theme(plot.title = element_text(size = 11, lineheight=0.8, hjust = 0.5, face="bold"))
+
+ggarrange(q1, q2, ncol = 2, nrow = 1)
+```
+
+
+- We can see the two PCA clustering plots are very similar to each other even though their color are not exactly the same. This is just because the centers are not assigned with same order. The best clustering from mykmeans() and built-in kmeans are very close to each other. 
+
+
+
+**---------------------------------------------------------------------------------------------------------------**    
+
+  * [15 Points] Compare the clustering results from the above two questions with the built-in `kmeans()` function in R. Use tables/figures to demonstrate your results and comment on your findings.
+
+**Solution:**  
+
+   There can be different result from the k-means algorithm if we change the initial centers and clustering assignment procedure. However in question 1, we didn't see the significanet influence to the result. From the comparison to the above two questions we can see mykmeans method is running the same algorithm as the built-in kmeans(). So even though their final cluster order may be different, their clustering are providing very similar result. 
+   
+   
+
+## Question 2 [50 Points] Two-dimensional Gaussian Mixture Model
+
+We consider an example of the EM algorithm, which fits a Gaussian mixture model to the Old Faithful eruption data. For a demonstration of this problem, see the figure provided on [Wikipedia](https://en.wikipedia.org/wiki/Expectation%E2%80%93maximization_algorithm). As the end result, we will obtain the distribution parameters of the two underlying distributions. We consider the problem as follows. For this question, you are allowed to use packages that calculate the densities of normal distributions. 
+
+* We use both variables `eruptions` and `waiting`. We assume that the underlying distributions given the unobserved latent variables are both two-dimensional normal: $N(\mu_1, \Sigma_1)$ and $N(\mu_2, \Sigma_2)$, respectively, while $\mu_1$, $\Sigma_1$, $\mu_2$, and $\Sigma_2$ are unknow parameters that we need to solve.
+* We assume that the unobserved latent variables (that indicate the membership) follow i.i.d. Bernoulli distribution, with parameter $p$.
+* Based on the logic of an EM algorithm, we will first initiate some values of the parameters in the normal distribution. I provided a choice of them, and the normal density plots based on the initial values.
+* Your goal is to write the EM algorithm that progressively updates the parameters and the latent variable distribution parameter. Eventually, we will reach a stable model fitting result that approximate the two underlying distributions, as demonstrated on the Wikipedia page. Choose a reasonable stopping criterion. To demonstrate your results, you should provide at least the following information. 
+  + The distribution parameters $\mu_1$, $\Sigma_1$, $\mu_2$, and $\Sigma_2$
+  + A histogram of the underlying probabilities of the latent variables
+  + Plot the normal densities at the 2nd, 3rd, 4th and the final iteration of your algorithm
+* Now, experiment a very different initial value of the parameters and rerun the algorithm. Comment on the efficiency and convergence speed of this algorithm.  
+
+```{r q2a, echo=TRUE, include=TRUE, fig.height=8, fig.width = 11}
+  # load the data
+  faithful = read.table("faithful.txt")
+
+  # the parameters
+  mu1 = c(3, 80)
+  mu2 = c(3.5, 60)
+  Sigma1 = matrix(c(0.1, 0, 0, 10), 2, 2)
+  Sigma2 = matrix(c(0.1, 0, 0, 50), 2, 2)
+  
+  # plot the current fit 
+  library(mixtools)
+  plot(faithful)
+ 
+  
+  addellipse <- function(mu, Sigma, ...)
+  {
+    ellipse(mu, Sigma, alpha = .05, lwd = 1, ...)
+    ellipse(mu, Sigma, alpha = .25, lwd = 2, ...)
+  }
+    
+  addellipse(mu1, Sigma1, col = "darkorange")
+  addellipse(mu2, Sigma2, col = "deepskyblue")
+  
+  
+```
+
+**Solution:**
+
+- Here the provided inital value is as following:
+
+$$\mathbf{\mu} = \left(\begin{array}
+{rrr}
+3 & 80  \\
+3.5 & 60  
+\end{array}\right)$$
+
+covariance matrix as below:
+$$\mathbf{\Sigma_1} = \left(\begin{array}
+{rrr}
+0.1 & 0  \\
+0 & 10  
+\end{array}\right)
+\      
+\mathbf{\Sigma_2} = \left(\begin{array}
+{rrr}
+0.1 & 0  \\
+0 & 50  
+\end{array}\right)$$
+
+- Fisrt, We will build the pdf function based on the multivariate normal distribution as below:
+$$N(\mu_k, \Sigma_k) = \frac{e^{-\frac{1}{2}(x_i-\mu_k)^T \Sigma^{-1} (x_i-\mu_k) }}{\sqrt{(2\pi)^p|\Sigma|}}$$
+
+
+```{r q2b, echo=TRUE, include=TRUE}
+
+## Eigen decomposition for inverse of covariance matrix
+get.inverse = function(sigma){
+  middle = diag(eigen(sigma)$values ^ -1)
+  side = eigen(sigma)$vectors
+  return(side %*% middle %*% t(side))
+}
+
+## The multivariate pdf
+p.d.f = function(matrix, mu, sigma){
+  apply(matrix, 1, function(x)
+     1/sqrt((2*pi)^length(x) * det(sigma)) * 
+     exp(-(1/2) * t(x - mu) %*% get.inverse(sigma) %*% (x - mu))
+  )
+}
+```
+
+
+- Secondly, we build the EM funciton with the pdf function and the covariance matrix:
+
+
+$$\mathbf{\Sigma} = \left(\begin{array}
+{rrr}
+S_\text{11} & S_\text{12}  \\
+S_\text{21} & S_\text{22}  
+\end{array}\right)$$
+
+
+
+$$S_{ij}=\frac{1}{m}\sum_{k=1}^{m}(x_{ik} - \bar {x_i})(x_{jk} - \bar {x_j})$$
+- The stop criteria is L1 distance less than `1e-2` between the new $\mu$ and old $\mu$
+
+
+```{r q2c, echo=TRUE, include=TRUE}
+
+## EM method
+myEM = function(data, mu = matrix(c(3, 80, 3.5, 60), 2, 2, byrow = T), 
+    k = 2, iter.max = 50, sigma1 = matrix(c(0.1, 0, 0, 10), 2, 2), 
+    sigma2 = matrix(c(0.1, 0, 0, 50), 2, 2), epsilon = 1e-2){
+  
+  if(k != dim(mu)[1] | k != dim(sigma1)[1] | k != dim(sigma2)[1]){
+      warning("The dimenstion is incorrect!")
+      return()
+  }
+  p = dim(data)[2]
+  n = dim(data)[1]
+  iter = 1
+  Delta = 1
+  
+  responsibilities = list()
+  mu.s = list()
+  covmax.s = list()
+  
+  while(iter <= iter.max & Delta > epsilon){
+    
+    if(iter == 1){
+      covmax = array(dim = c(p, p, k))
+      covmax.1 = array(dim = c(p, p, k))
+      covmax[,,1] = sigma1
+      covmax[,,2] = sigma2
+      covmax.1[,,1] = covmax[,,1]
+      covmax.1[,,2] = covmax[,,2]
+      mu.old = mu
+      hat.pi = rep(1/k,k)
+    }
+    
+    # E-step
+    mvn = sapply(1:k, function(c) p.d.f(data, mu[c,], covmax[,,c])) # pdf for all
+    
+    responsibility = t(hat.pi * t(mvn)) / rowSums(t(hat.pi * t(mvn)))
+    responsibilities[[iter]] = responsibility
+    # E-step END
+    
+    # M-step
+    denom = colSums(responsibility)
+    
+    hat.pi = colSums(responsibility)/n
+    
+    mu = t(sapply(1:k, function(c) 1/denom[c] * colSums(responsibility[, c] * data)))
+    
+    mu.s[[iter]] = mu
+    
+    # for(i in 1:p) for(j in 1:p) for(c in 1:k) covmax.1[i, j, c] =
+    #   1/denom[c] * sum(responsibility[, c] * (data[, i] - mu[c, i]) * (data[, j] - mu[c, j])) 
+    
+    v = as.vector(sapply(1:k, function(c) sapply(1:p, function(i) sapply(1:p, function(j) 
+      1/denom[c] * sum(responsibility[, c] * (data[, i] - mu[c, i]) * (data[, j] - mu[c, j]))
+      ))))
+    covmax = array(v, dim = c(p,p,k))
+    covmax.s[[iter]] = covmax
+    # M-step END
+    
+    # recycle
+    Delta = sum(abs(mu - mu.old))
+    iter = iter + 1
+    mu.old = mu
+  }
+  # print(iter - 1)
+  return(list(iter-1, mu.s, covmax.s, responsibilities))
+}
+```
+
+```{r q2d, echo=TRUE, include=TRUE}
+ee = myEM(data = as.matrix(faithful))
+n = dim(faithful)[1]
+```
+
+- The final $p$ is **`r colSums(ee[[4]][[(ee[[1]])]])[1]/n`** or it's complementary **`r colSums(ee[[4]][[(ee[[1]])]])[2]/n`**  
+- The final $\mu_1$ is **(`r ee[[2]][[(ee[[1]])]][1,]`)**
+- The final $\Sigma_1$ is: 
+```{r, echo=TRUE, include=TRUE}
+ee[[3]][[(ee[[1]])]][,,1]
+```
+- The final $\mu_2$ is **(`r ee[[2]][[(ee[[1]])]][2,]`)**
+- The final $\Sigma_2$ is: 
+```{r, echo=TRUE, include=TRUE}
+ee[[3]][[(ee[[1]])]][,,2]
+```
+
+- Let's use the initial value given in the question. 
+- Below is the histogram of the two latent variables at the final iteration.
+
+```{r  q2e, echo=TRUE, include=TRUE}
+    hist(ee[[4]][[ee[[1]]]][,1], xlim=c(0,1), col="green", breaks=20, 
+         main = "", ylab = 'Frequency', xlab = 'Underlying Posibilities')
+    hist(ee[[4]][[ee[[1]]]][,2], add=T, col=rgb(0.6, 0, 1, 0.5), breaks=20)
+    legend("top", legend="Final",
+       cex=1)
+```
+
+- And below are the histograms to all the iterations. 
+
+```{r  q2f, echo=TRUE, include=TRUE, out.width='1.1\\textwidth', fig.height=10, out.height='2.0\\textwidth' }
+par(mfrow=c((ee[[1]] %/% 3 + (ee[[1]] %% 3 > 0)),3),mar=c(1.0, 5.2, 1.0, 1.2),oma = c(1, 3, 1, 3))
+for(i in 1:ee[[1]]){
+    hist(ee[[4]][[i]][,1], xlim=c(0,1), col="green", breaks=20, main = "", ylab = 'Frequency')
+    hist(ee[[4]][[i]][,2], add=T, col=rgb(0.6, 0, 1, 0.5), breaks=20)
+    legend("top", legend=paste("iter = ", i),
+       cex=1)
+}
+```
+
+- We can see the underlying probabilities to the latent variables are getting more and more close to 0 or 1, that means, the specific point will be clearly assigned to one of the two latent variables by the EM algorithm. 
+
+- Below is the normal densities at 1st, 2nd, 3rd, 4th and the final iteration with Dr.Zhu's initial value.
+
+```{r q2g, echo=TRUE, include=TRUE, out.width='1.0\\textwidth', out.height='0.8\\textwidth', fig.height = 5,fig.width = 8}
+## Now let's plot the EM result!
+## Here is the normal densities including 2nd 3rd 4th iteration
+par(mfrow=c(2,3),mar=c(0.7, 1.7, 1.8, 1.2),oma = c(6, 6, 7, 3))
+
+color = c('green','purple')
+mu.12 = rbind(mu1,mu2)
+
+plot(faithful)
+for (i in 1:2){
+    ellipse(mu.12[i,], get(paste('Sigma',toString(i), sep = '')),
+            alpha = 0.05, lwd = 2, col = color[i])
+    ellipse(mu.12[i,], get(paste('Sigma',toString(i), sep = '')),
+            alpha = 0.25, lwd = 2, col = color[i])
+legend("topleft", legend="Initial",
+       cex=1.2)
+}
+
+
+for (i in c(1,2,3,4)){
+    plot(faithful)
+    ellipse(ee[[2]][[i]][1,], ee[[3]][[i]][,,1], alpha = 0.05, 
+            lwd = 2, col = 'green')
+    ellipse(ee[[2]][[i]][1,], ee[[3]][[i]][,,1], alpha = 0.25, 
+            lwd = 2, col = 'green')    
+    ellipse(ee[[2]][[i]][2,], ee[[3]][[i]][,,2], alpha = 0.05, 
+            lwd = 2, col = 'purple')
+    ellipse(ee[[2]][[i]][2,], ee[[3]][[i]][,,2], alpha = 0.25, 
+            lwd = 2, col = 'purple')
+    legend("topleft", legend=paste("iter = ", i),
+       cex=1.2)
+}
+
+plot(faithful)
+    ellipse(ee[[2]][[ee[[1]]]][1,], ee[[3]][[15]][,,1], alpha = 0.05, 
+            lwd = 2, col = 'green')
+    ellipse(ee[[2]][[ee[[1]]]][1,], ee[[3]][[15]][,,1], alpha = 0.25, 
+            lwd = 2, col = 'green')
+    ellipse(ee[[2]][[ee[[1]]]][2,], ee[[3]][[15]][,,2], alpha = 0.05, 
+            lwd = 2, col = 'purple')
+    ellipse(ee[[2]][[ee[[1]]]][2,], ee[[3]][[15]][,,2], alpha = 0.25, 
+            lwd = 2, col = 'purple')
+    legend("topleft", legend="Final",
+       cex=1.2)    
+
+mtext("The EM Result in Initial, Iteration (1-4) and Final", 
+      side = 3, line = 1, outer = TRUE, cex = 1.4)
+mtext('eruptions', side = 1, outer = TRUE, line = 3, cex = 1)
+mtext('waiting', side = 2, outer = TRUE, line = 2, cex = 1)
+```
+
+- Based on the provided initial value, the EM algorithm takes 16 iteration to converge. Actually, it can converge much faster by choosing an inital value with small covariance matrix. The given initial value is with $S_{22} = 50$, which means one of the assuming normal distribution will start with a distribution with a very large variance. Each iteration will adjust the variance matrix but it will take appoximate 7 iterations to get a reasonable covariance matrix and corresponding variance value. 
+
+**---------------------------------------------------------------------------------------------------------------------**   
+
+
+- **Now let's try different intial value:**
+
+
+$$\mathbf{\mu} = \left(\begin{array}
+{rrr}
+2 & 80  \\
+4.2 & 65  
+\end{array}\right)$$
+
+covariance matrix as below:
+$$\mathbf{\Sigma_1} = \left(\begin{array}
+{rrr}
+0.1 & 0  \\
+0 & 0.7  
+\end{array}\right)
+\      
+\mathbf{\Sigma_2} = \left(\begin{array}
+{rrr}
+0.1 & 0  \\
+0 & 0.25  
+\end{array}\right)$$
+
+
+
+```{r q2h, echo=TRUE, include=TRUE, out.width='1.0\\textwidth', out.height='2.0\\textwidth',fig.height=11.5}
+
+# DR.Zhu's initial is not easy to converge, it takes longer, 
+# lower the covariance matrix can accelerate the covergence.
+
+mu.a = matrix(c(2, 80, 4.2, 60), 2, 2, byrow = T)
+sigma.a = matrix(c(0.1, 0, 0, 0.7), 2, 2)
+sigma.b = matrix(c(0.1, 0, 0, 0.25), 2, 2)
+
+ee.1 = myEM(data = as.matrix(faithful), mu = mu.a, sigma1 = sigma.a, sigma2 = sigma.b
+            , epsilon = 1e-3)
+n = dim(faithful)[1]
+```
+
+- The final $p$ is **`r colSums(ee.1[[4]][[(ee.1[[1]])]])[1]/n`** or it's complementary **`r colSums(ee.1[[4]][[(ee.1[[1]])]])[2]/n`**  
+- The final $\mu_1$ is **(`r ee.1[[2]][[(ee.1[[1]])]][1,]`)**
+- The final $\Sigma_1$ is: 
+```{r, echo=TRUE, include=TRUE}
+ee.1[[3]][[(ee.1[[1]])]][,,1]
+```
+- The final $\mu_2$ is **(`r ee.1[[2]][[(ee.1[[1]])]][2,]`)**
+- The final $\Sigma_2$ is: 
+```{r, echo=TRUE, include=TRUE}
+ee.1[[3]][[(ee.1[[1]])]][,,2]
+``` 
+
+- **Below is the histogram of the two latent variables at the final iteration.**
+
+```{r q2i, echo=TRUE, include=TRUE}
+    hist(ee.1[[4]][[ee.1[[1]]]][,1], xlim=c(0,1), col="green", breaks=20, 
+         main = "", ylab = 'Frequency', xlab = 'Underlying Posibilities')
+    hist(ee.1[[4]][[ee.1[[1]]]][,2], add=T, col=rgb(0.6, 0, 1, 0.5), breaks=20)
+    legend("top", legend="Final",
+       cex=1)
+```
+
+
+- **And here are the plots for underlying probabilities of latent variable in all interations.**
+
+```{r q2j, echo=TRUE, include=TRUE, out.width='1.1\\textwidth', fig.height=5, out.height='0.6\\textwidth' }
+par(mfrow=c((ee.1[[1]] %/% 3 + (ee.1[[1]] %% 3 > 0)),3),mar=c(1.0, 5.2, 1.0, 1.2),oma = c(1, 3, 1, 9))
+for(i in 1:ee.1[[1]]){
+    hist(ee.1[[4]][[i]][,1], xlim=c(0,1), col="green", breaks=20, main = "", ylab = 'Frequency')
+    hist(ee.1[[4]][[i]][,2], add=T, col=rgb(0.6, 0, 1, 0.5), breaks=20)
+    legend("top", legend=paste("iter = ", i),
+       cex=1)
+}
+```
+
+
+- **Below are the normal densities plots.**
+
+```{r q2k, echo=TRUE, include=TRUE, out.width='1.0\\textwidth', out.height='0.8\\textwidth',fig.height = 6, fig.width = 8}
+par(mfrow=c(3,3),mar=c(0.7, 1.2, 1.8, 1.2),oma = c(6, 6, 7, 3))
+
+sigma.ab = list(sigma.a, sigma.b)
+plot(faithful)
+for (i in 1:2){
+    ellipse(mu.a[i,], sigma.ab[[i]], alpha = 0.05, lwd = 2, col = color[i])
+    ellipse(mu.a[i,], sigma.ab[[i]], alpha = 0.25, lwd = 2, col = color[i])
+}
+legend("topleft", legend= "Initial", cex=1)
+  
+
+for (i in 1:(ee.1[[1]] - 1)){
+    plot(faithful)
+    ellipse(ee.1[[2]][[i]][1,], ee.1[[3]][[i]][,,1], 
+            alpha = 0.05, lwd = 2, col = 'green')
+    ellipse(ee.1[[2]][[i]][1,], ee.1[[3]][[i]][,,1], 
+            alpha = 0.25, lwd = 2, col = 'green')
+    ellipse(ee.1[[2]][[i]][2,], ee.1[[3]][[i]][,,2], 
+            alpha = 0.05, lwd = 2, col = 'purple')
+    ellipse(ee.1[[2]][[i]][2,], ee.1[[3]][[i]][,,2], 
+            alpha = 0.25, lwd = 2, col = 'purple')
+    legend("topleft", legend=paste("iter = ", i), cex=1)
+}
+
+plot(faithful)
+for (i in 1:2){
+    ellipse(ee.1[[2]][[(ee.1[[1]])]][i,], ee.1[[3]][[(ee.1[[1]])]][,,i], alpha = 0.05, 
+            lwd = 2, col = color[i])
+    ellipse(ee.1[[2]][[(ee.1[[1]])]][i,], ee.1[[3]][[(ee.1[[1]])]][,,i], alpha = 0.25, 
+            lwd = 2, col = color[i])
+}
+legend("topleft", legend= "Final", cex=1)  
+    
+mtext("The EM Result in Initail, All Iterations and Final", 
+      side = 3, line = 1, outer = TRUE, cex = 1.2)
+mtext('eruptions', side = 1, outer = TRUE, line = 3, cex = 1)
+mtext('waiting', side = 2, outer = TRUE, line = 2, cex = 1)    
+```
+
+
+
+**Efficiency and Convergence on different initial value**
+
+- After investigation to the $\mu$ and $\Sigma$, I found the **convariance matrix** affects the convergence dramatically. If the proper $\Sigma$ is applied as the initail condition, the convergence speed will be much faster. We should try to use relatively small variance in the initial covariance matrix. In the first trial, we use provided initial $\Sigma$ from the question, it takes 16 iterations to converge. In the second initial value we tried above, it only takes 7 iterations to converge even I decrease the L1 threshold to `1e-3`.  
+
+- On the other hand, the $\mu$ doesn't affect the convergence speed substantially, the EM algorithm can get the appropriate mean in one or two interations if the reasonable covariance matrix is calculated in the algorithm. 
+
+
+
