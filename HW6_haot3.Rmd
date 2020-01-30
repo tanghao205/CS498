@@ -1,0 +1,440 @@
+---
+title: 'STAT 542 / CS 598: Homework 6'
+author: "Hao Tang ID: haot3"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: 2
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '2'
+---
+
+```{r setup, include=FALSE}
+  knitr::opts_chunk$set(include = TRUE)  # TRUE for solution; FALSE for questions set
+
+  knitr::opts_chunk$set(echo = TRUE)
+  knitr::opts_chunk$set(message = FALSE)
+  knitr::opts_chunk$set(warning = FALSE)
+  knitr::opts_chunk$set(fig.height = 6, fig.width = 8, out.width = '50%', fig.align = "center")
+  options(width = 90)
+```
+
+```{css, echo=FALSE}
+.solution {
+background-color: #e6ffe6;
+}
+```
+
+```{r, echo=TRUE, include=TRUE}
+rm(list = ls(all = TRUE))
+
+list.of.packages <- c("knitr", "tidyverse", "ggpubr", "ggplot2", "quadprog", "e1071")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)){
+  install.packages(new.packages, repos = "http://cran.us.r-project.org")
+  }
+library(knitr)
+library(tidyverse)
+library(ggplot2)
+library(ggpubr)
+library(quadprog)
+library(e1071)
+```
+
+
+## Question 1 [50 Points] Linearly Separable SVM using Quadratic Programming
+
+Install the `quadprog` package (there are similar ones in Python too) and utilize the function `solve.QP` to solve SVM (dual problem). The `solve.QP` function is trying to perform the minimization problem:
+\begin{align}
+\text{minimize} & \quad \frac{1}{2} \boldsymbol\beta^T \mathbf{D} \boldsymbol\beta - d^T \boldsymbol\beta \nonumber \\
+\text{subject to} & \quad \mathbf{A}^T \boldsymbol\beta \geq a \nonumber
+\end{align}
+For more details, read the document file of the \texttt{quadprog} package on CRAN. Investigate the dual optimization problem of the seperable SVM formulation, and write the problem into the above form by properly defining $\mathbf{D}$, $d$, $A$ and $a$. 
+
+__Note__: The package requires $\mathbf{D}$ to be positive definite, while it may not be true in our problem. A workaround is to add a "ridge," e.g., $10^{-5} \mathbf{I}$, to the $\mathbf{D}$ matrix, making it invertible. This may affect your later results, so figure out a way to fix them. 
+
+You should generate the data using the following code (or write a similar code in Python). After solving the quadratic programming problem, perform the following:
+
+* Convert the solution into $\beta$ and $\beta_0$, which can be used to define the classification rule
+* Plot all data and the decision line
+* Add the two separation margin lines to the plot
+* Add the support vectors to the plot
+
+
+```{r fig.width=6, fig.height=6, out.width = '50%'}
+  set.seed(1); n <-40; p <- 2
+  xpos <- matrix(rnorm(n*p, mean=0, sd=1), n, p)
+  xneg <- matrix(rnorm(n*p, mean=4, sd=1), n, p)
+  x <- rbind(xpos, xneg)
+  y <- matrix(c(rep(1, n), rep(-1, n)))
+  
+  plot(x,col=ifelse(y>0,"darkorange", "deepskyblue"), pch = 19, xlab = "x1", ylab = "x2")
+  legend("topleft", c("Positive","Negative"), 
+       col=c("darkorange", "deepskyblue"), pch=c(19, 19), text.col=c("darkorange", "deepskyblue"))
+```
+
+**Solution:**
+
+- First, let's form the Dmat(D), dvec(d), Amat(A) and bvec(a), then plug in the solve.QP function. 
+
+- The dual problem is the optimization as below:
+$$ max: \sum_{i=1}^n\alpha_i - \frac{1}{2}\sum_{i,j=1}^n y_iy_j\alpha_i\alpha_jx_i^Tx_j\ ,\\ 
+Subject\ to\ \alpha_i \geq0,i=1,...n.\\ 
+\sum_{i=1}^n\alpha_iy_i = 0$$
+
+- It's same as the min optimization below, this matches the problem applied to quadprog:
+$$ min: -\sum_{i=1}^n\alpha_i + \frac{1}{2}\sum_{i,j=1}^n y_iy_j\alpha_i\alpha_jx_i^Tx_j\ ,\\ 
+Subject\ to\ \alpha_i \geq0,i=1,...n.\\ 
+\sum_{i=1}^n\alpha_iy_i = 0$$
+
+
+- So, the corresponding matrix can be defined as below(N = 80):
+
+$$
+D = \begin{bmatrix}
+x_1^Tx_1y_1^2,\ x_1^Tx_2y_1y_2,\ ...\ x_1^Tx_Ny_1y_N\\
+x_2^Tx_1y_2y_1,\ x_2^Tx_2y_2^2,\ ...\ x_2^Tx_Ny_2y_N\\
+...\ \ \ \ \ \ \ \ \ \ \ ...\ \ \ \ \ \ ...\ \ \ \ \ \ \ \ \ ...\\
+x_N^Tx_1y_Ny_1,\ x_N^Tx_2y_Ny_2,\ ...\ x_N^Tx_Ny_N^2\\
+\end{bmatrix}_{N \times N},
+A^T = \begin{bmatrix}
+y_1,y_2,\ ...\ y_N\\
+1,\ 0,\ ...\ 0\\
+\ \ \ \ \ \ \ \ \ \ \ ...\ \ \ \ \ \ \ \ \ \\
+0,\ 0,\ ...\ 1\\
+\end{bmatrix}_{(N+1) \times N},\ 
+\\
+\\
+d = \begin{bmatrix}
+1\\
+1\\
+...\\
+1
+\end{bmatrix}_{N \times 1},
+a = \begin{bmatrix}
+0\\
+0\\
+...\\
+0\\
+\end{bmatrix}_{(N+1) \times 1}
+$$
+
+
+```{r, echo=TRUE, include=TRUE}
+
+## The above formular is for all the QP problem, here we need to make the matrix accordingly.
+
+# min{ (-dvec)^T * b + 0.5 * t(b) %*% Dmat %*% b }
+# max{ (dvec)^T * b - 0.5 * t(b) %*% Dmat %*% b } exactly is the Dual
+# t(Amat) * b >= bvec
+
+n = dim(x)[1]
+
+## Calculate the matrix Dmat, dvec, Amat and bvec
+
+Dmat.dual = outer(as.vector(y),as.vector(y)) * (x%*%t(x))
+Dmat.dual = Dmat.dual + diag(1e-5,n)
+
+dvec.dual = rep(1, n)
+Amat.dual <- rbind(t(y), diag(n))
+# Must have the first row for equality
+bvec.dual <- c(0, rep(0, n))
+
+result.QP.dual = solve.QP(Dmat.dual,dvec.dual,t(Amat.dual),bvec=bvec.dual, meq=1)
+alpha = result.QP.dual$solution
+
+
+beta = c(sum(alpha * y * x[,1]), sum(alpha * y * x[,2]))
+beta_0 = -(max(x[41:80,] %*% beta) + min(x[1:40,] %*% beta))/2
+sv = x[alpha > 0.001,] # The support vector is clarified from the alpha value
+```
+
+- Even if the alpha value is not exactly `0` to those non-suport vector after Dmat change, we can see most of the alpha value are small and only specific value are with the order of 1e-1. Here I choose `0.001` as the threshold for the support vector filter. As most of the alpha value is small, their contribution to the $\beta$ and $\beta_0$ is also small so they barely influence the result to below formula even though they aren't exactly zero.
+$$\beta = \sum_{i=1}^n\alpha_iy_ix_i$$
+$$\beta_0 = \frac{max_{i:y_i=-1}x_i^T\widehat{\beta} + min_{i:y_i=1}x_i^T\widehat{\beta}}{2}$$
+
+- From above computation, $\hat{\beta}$ is **(`r beta`)**.
+- $\hat{\beta_0}$ is **(`r beta_0`)**.
+- Now let's plot the decision boundary as the formula:
+
+$$sign(x^T\hat{\beta} + \hat{\beta_0})$$
+
+```{r, echo=TRUE, include=TRUE, fig.width=6, fig.height=6, out.width = '50%'}
+plot.SVM.2D = function(x,y,beta,beta_0, margin = F, sv = c()){
+  plot(x,col=ifelse(y>0,"darkorange", "deepskyblue"), pch = 19, xlab = "x1", ylab = "x2")
+  
+    abline(a = -beta_0/beta[2],
+          b = -beta[1]/beta[2],
+          col = 'black', lwd = 2)
+  legend = c("Positive","Negative","Decision Boundary")
+  legend.symbol.col =c('darkorange', 'deepskyblue', 'black')
+  t.col = c('darkorange', 'deepskyblue', 'black')
+  pch = c(19,19,NA)
+  lty = c(NA,NA,1)
+  if(margin == T){
+    abline(b = -beta[1]/beta[2],
+          a = (-beta_0 + 1)/beta[2], 
+          col = 'seagreen', lwd = 2)
+  
+    abline(b = -beta[1]/beta[2],
+      a = (-beta_0 - 1)/beta[2], 
+      col = 'seagreen', lwd = 2)
+    legend.symbol.col = append(legend.symbol.col, 'seagreen')
+    t.col = append(t.col, 'seagreen')
+    pch = append(pch, NA)
+    lty = append(lty, 1)
+    legend = append(legend, 'Margin Line')
+  }
+  if (length(sv) != 0){
+    points(x = sv[,1], y = sv[,2], pch = 1, cex = 3, col = 'red')
+    legend.symbol.col = append(legend.symbol.col, 'red')
+    t.col = append(t.col, 'red')
+    pch = append(pch, 1)
+    lty = append(lty, NA)
+    legend = append(legend, 'Support Vector')    
+  }
+    
+legend("topleft", legend, col=legend.symbol.col, bg = "white",
+      pch = pch, lty = lty, text.col=t.col, cex = 0.8)
+}
+plot.SVM.2D(x, y, beta, beta_0, margin = F)
+```
+
+- And we can add the margin.
+
+```{r, echo=TRUE, include=TRUE, fig.width=6, fig.height=6, out.width = '50%'}
+plot.SVM.2D(x, y, beta, beta_0, margin = T)
+```
+
+- Finally, the support vector is marked with red circle. Their corresponding $\alpha$ is with the relatively larger value from the optim function.
+
+```{r, echo=TRUE, include=TRUE, fig.width=6, fig.height=6, out.width = '50%'}
+plot.SVM.2D(x, y, beta, beta_0, margin = T, sv = sv)
+```
+
+
+## Question 2 [25 Points] Linearly Non-seperable SVM using Penalized Loss
+
+We also introduced an alternative method to solve SVM. Consider a logistic loss function 
+
+$$L(y, f(x)) = \log(1 + e^{- y f(x)})$$
+and solve the penalized loss for a linear SVM
+
+$$ \underset{\beta_0, \beta}{\arg\min} \sum_{i=1}^n L(y_i, \beta_0 + x^T_i \beta) + \lambda \lVert \beta \rVert^2$$
+The rest of the job is to solve this optimization problem. To do this, we will utilize a general-purpose optimization package/function. For example, in `R`, you can use the `optim` function. Read the documentation of this function (or equivalent ones in Python) and set up the objective function properly to solve for the parameters. If you need an example of how to use the `optim` function, read the corresponding part in the example file provide on our course website [here](https://teazrq.github.io/stat542/other/r-intro.html) (Section 10). You should generate the data using the following code (or write a similar code in Python). Perform the following:
+
+* Write a function to define the objective function (penalized loss). The algorithm may run faster if you further define the gradient function. However, the gradient is not required for completing this homework, but it counts for 2 bonus points. 
+* Choose a reasonable $\lambda$ value so that your optimization can run properly. In addition, I recommend using the `BFGS` method in the optimization. 
+* After solving the optimization problem, plot all data and the decision line
+* If needed, modify your $\lambda$ so that the model fits reasonably well (you do not have to optimize this tuning), and re-plot
+
+```{r fig.width=6, fig.height=6, out.width = '50%'}
+  set.seed(1)
+  n = 100 # number of data points for each class
+  p = 2 # dimension
+
+  # Generate the positive and negative examples
+  xpos <- matrix(rnorm(n*p,mean=0,sd=1),n,p)
+  xneg <- matrix(rnorm(n*p,mean=1.5,sd=1),n,p)
+  x <- rbind(xpos,xneg)
+  y <- c(rep(-1, n), rep(1, n))
+    
+  plot(x,col=ifelse(y>0,"darkorange", "deepskyblue"), pch = 19, xlab = "x1", ylab = "x2")
+  legend("topleft", c("Positive","Negative"), col=c("darkorange", "deepskyblue"), 
+         pch=c(19, 19), text.col=c("darkorange", "deepskyblue"))
+```
+  
+**Solution:**
+  
+- First, let's make the objective function and the gradient:
+
+```{r, echo=TRUE, include=TRUE}
+
+fn = function(par,lambda, x, y){
+  lambda * (par[2]^2 + par[3]^2) + sum(log(1+exp(-y * (par[1] + x %*% c(par[2],par[3])))))
+}
+gr = function(par,lambda, x, y){
+  c(
+    sum((-y) * exp(-y * (par[1] + x %*% c(par[2],par[3])))/
+          (1 + exp(-y * (par[1] + x %*% c(par[2],par[3]))))),
+    2 * lambda * par[2] + sum((-y) * x[,1] * exp(-y * (par[1] + x %*% c(par[2],par[3])))/
+        (1 + exp(-y * (par[1] + x %*% c(par[2],par[3]))))),
+    2 * lambda * par[3] + sum((-y) * x[,2] * exp(-y * (par[1] + x %*% c(par[2],par[3])))/
+        (1 + exp(-y * (par[1] + x %*% c(par[2],par[3])))))
+  )
+}
+```
+
+- Here I choose $\lambda = 1$, run the the optim funciton:
+
+```{r, echo=TRUE, include=TRUE}
+# lambda = 1
+result.optim.linear = optim(par = c(0,0,0), fn = fn, gr = gr,
+                            lambda = 1, method = 'BFGS', x = x, y = y)
+## test the correctness
+
+fitted.q2 = sign((x %*% c(result.optim.linear$par[2],
+    result.optim.linear$par[3])) + result.optim.linear$par[1])
+accuracy.q2 = mean(fitted.q2 == y)
+
+```
+
+- Now let's plot the data and the decision line on the original data. 
+
+```{r, echo=TRUE, include=TRUE, fig.width=6, fig.height=6, out.width = '50%'}
+
+plot(x,col=ifelse(y>0,"darkorange", "deepskyblue"), pch = 19, xlab = "x1",
+     ylab = "x2", xlim = c(-3,5), main = "Lambda = 1")
+
+abline(a = -result.optim.linear$par[1]/result.optim.linear$par[3],
+      b = -result.optim.linear$par[2]/result.optim.linear$par[3], col = 'black', lwd = 2)
+
+legend("topleft", c("Positive","Negative"), col=c("darkorange", "deepskyblue"), bg = "white", 
+      pch=c(19, 19), text.col=c("darkorange", "deepskyblue"))
+```
+
+- There is very mild change to the decision boundary when I choose different $\lambda$. I will choose larger $\lambda$, $\lambda = 10$ so the model will be less likely to overfit. Here is the plot with $\lambda = 10$:
+
+```{r, echo=TRUE, include=TRUE, fig.width=6, fig.height=6, out.width = '50%'}
+result.optim.linear.t = optim(par = c(0,0,0), fn = fn,  gr = gr,
+                            lambda = 10, method = 'BFGS', x = x, y = y)
+plot(x,col=ifelse(y>0,"darkorange", "deepskyblue"), pch = 19, xlab = "x1",
+     ylab = "x2", xlim = c(-3,5), main = "Lambda = 10")
+abline(a = -result.optim.linear.t$par[1]/result.optim.linear.t$par[3],
+      b = -result.optim.linear.t$par[2]/result.optim.linear.t$par[3], col = 'black', lwd = 2)
+legend("topleft", c("Positive","Negative"), col=c("darkorange", "deepskyblue"), bg = "white", 
+      pch=c(19, 19), text.col=c("darkorange", "deepskyblue"))
+fitted.q2.t = sign((x %*% c(result.optim.linear.t$par[2],
+    result.optim.linear.t$par[3])) + result.optim.linear.t$par[1])
+accuracy.q2.t = mean(fitted.q2.t == y)
+```
+
+- The prediction accuracy with $\lambda = 1$ is `r accuracy.q2`. 
+- The prediction accuracy with $\lambda = 10$ is `r accuracy.q2.t`. 
+
+## Question 3 [25 Points] Nonlinear and Non-seperable SVM using Penalized Loss
+
+We can further use the kernel trick to solve for a nonlinear decision rule. The optimization becomes 
+
+$$\sum_{i=1}^n L(y_i, K_i^T \beta) + \lambda \beta^T K \beta$$
+where $K_i$ is the $i$th column of the $n \times n$ kernel matrix $K$. For this problem, we consider the Gaussian kernel (you do not need an intercept). Again, we can use the logistic loss.
+
+You should generate the data using the following code (or write a similar code in Python). Perform the following:
+
+* Pre-calculate the $n \times n$ kernel matrix $K$ of the observed data
+* Write a function to define the objective function (this should not involve the original $x$, but uses $K$). Again, the gradient is not required for completing this homework. However, it counts for 3 bonus points. 
+* Choose a reasonable $\lambda$ value so that your optimization can run properly
+* After solving the optimization problem, plot **fitted** labels (in-sample prediction) for all subjects
+* If needed, modify your $\lambda$ so that the model fits reasonably well (you do not have to optimize this tuning), and re-plot
+* Summarize your in-sample classification error
+
+```{r fig.width=6, fig.height=6, out.width = '50%'}
+  set.seed(1)
+  n = 400
+  p = 2 # dimension
+
+  # Generate the positive and negative examples
+  x <- matrix(runif(n*p), n, p)
+  side <- (x[, 2] > 0.5 + 0.3*sin(3*pi*x[, 1]))
+  y <- sample(c(1, -1), n, TRUE, c(0.9, 0.1))*(side == 1) + 
+    sample(c(1, -1), n, TRUE, c(0.1, 0.9))*(side == 0)
+  
+  plot(x,col=ifelse(y>0,"darkorange", "deepskyblue"), pch = 19, xlab = "x1", ylab = "x2")
+  legend("topleft", c("Positive","Negative"), 
+       col=c("darkorange", "deepskyblue"), pch=c(19, 19), 
+       text.col=c("darkorange", "deepskyblue"), bg = 'white')
+```
+  
+**Solution:**
+
+- Let's calcuate the kernel matrix. According to data point distance and the interlocking distribution, we need to make the influence from individual neighbor of data point small enough, so I choose $\gamma = 5$:
+
+```{r, echo=TRUE, include=TRUE}
+horizontal = matrix(rep(rowSums(x^2),each=n),nrow=n)
+vertical = matrix(rep(rowSums(x^2),each=n), ncol=n, byrow=TRUE)
+dist.matrix = horizontal + vertical - 2 * (x %*% t(x))
+gamma = 5
+kernel.matrix = exp(-dist.matrix * gamma)
+```
+
+- Then we define the objective function and gradient:
+
+```{r, echo=TRUE, include=TRUE}
+fn = function(par,lambda, kernel.matrix, y){
+  lambda * (par %*% kernel.matrix %*% par) + sum(log((1+exp(-y * (t(kernel.matrix) %*% par)))))
+}
+# Here is the gradient:
+gr = function(par, lambda, kernel.matrix, y){
+  lambda * 2 * kernel.matrix %*% par + (exp(-y * (t(kernel.matrix) %*% par)) * 
+    (-y * rowSums(t(kernel.matrix))))/(1 + exp(-y * (t(kernel.matrix) %*% par)))
+  # t(-t(y) %*% t(kernel.matrix)))/(1 + exp(-y * (t(kernel.matrix) %*% par))) # Incorrect g
+}
+```
+- Here we run the optim function with $\lambda = 0.01$:
+
+```{r, echo=TRUE, include=TRUE}
+
+lambda = 0.01
+result.optim.gaussian = optim(par = rep(0,n), fn = fn, gr = gr,
+         lambda = lambda, method = 'BFGS', kernel.matrix = kernel.matrix, 
+         y = y, control = list(maxit = 250)) 
+## We don't need to specify kernel,y parameters and R will search it 
+## but the definition is not clear.
+
+fitted = sign(kernel.matrix %*% result.optim.gaussian$par)
+correct = sum(as.vector(fitted) == y)
+```
+
+- And we can plot the fitted labels for all subjects. 
+
+```{r, echo=TRUE, include=TRUE, fig.width=6, fig.height=6, out.width = '50%'}
+plot(x,col=ifelse(fitted > 0,"darkorange", "deepskyblue"), pch = 19, 
+     xlab = "x1", ylab = "x2", main = "Fitted Labels Plot (Lambda = 0.01)")
+legend("topleft", c("Positive","Negative"), 
+       col=c("darkorange", "deepskyblue"), pch=c(19, 19), 
+       text.col=c("darkorange", "deepskyblue"), bg = 'white')
+
+```
+
+- The plot seems reasonable but I would like to make the $\lambda$ larger so the boundary will be smoother to prevent overfitting. Below, I run the function again with $\lambda = 0.1$ and re-plot the fitted label.
+
+```{r, echo=TRUE, include=TRUE, fig.width=6, fig.height=6, out.width = '50%'}
+result.optim.gaussian.t = optim(par = rep(0,n), fn = fn, gr = gr,
+          lambda = 0.1, method = 'BFGS', kernel.matrix = kernel.matrix, 
+          y = y, control = list(maxit = 250)) 
+
+fitted.t = sign(kernel.matrix %*% result.optim.gaussian.t$par)
+correct.t = sum(as.vector(fitted.t) == y)
+
+plot(x,col=ifelse(fitted.t > 0,"darkorange", "deepskyblue"), pch = 19, 
+     xlab = "x1", ylab = "x2", main = "Fitted Labels Plot (Lambda = 0.1)")
+legend("topleft", c("Positive","Negative"), 
+       col=c("darkorange", "deepskyblue"), pch=c(19, 19), 
+       text.col=c("darkorange", "deepskyblue"), bg = 'white')
+```
+
+- Below is the confusion table to the fitted value and y label. 
+
+```{r, echo=TRUE, include=TRUE}
+display = matrix(table(fitted.t, y),2,2)
+accuracy = mean(as.vector(fitted.t) == y)
+colnames(display) = c("y = -1", "y = 1")
+rownames(display) = c("fitted = -1", "fitted = 1")
+kable(display, caption = "Confusion Table")
+```
+
+- The in-sample classification accuracy is **`r accuracy`**, so error is **`r 1- accuracy`**. The accuracy is closely related to separable boundary in the fitted label plot. The visible boundary seperates the two classes and the data point in the same side of the boundary shall be in the same class if there is no overfitting. The dispersed data points that's surrounded by its neighbor with opposite label will contribute the prediction error. Below is the plot with true/false positive and true/false negative comparing to the original data.
+
+```{r, echo=TRUE, include=TRUE, fig.width=6, fig.height=6, out.width = '50%'}
+
+
+plot(x,col=ifelse(fitted.t > 0,"darkorange", "deepskyblue"), 
+     pch = ifelse(fitted.t == y, 19,11),
+     xlab = "x1", ylab = "x2", main = "Fitted Labels Plot (Lambda = 0.1)")
+legend("topleft", c("True Positive", "False Positive", "True Negative", "False Negative"), 
+       col=c("darkorange", "darkorange","deepskyblue","deepskyblue"), 
+       pch=c(19, 11, 19, 11), 
+       text.col=c("darkorange", "darkorange", "deepskyblue", "deepskyblue"), bg = 'white')
+```
