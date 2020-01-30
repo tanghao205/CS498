@@ -1,6 +1,6 @@
 ---
-title: 'STAT 542 / CS 598: Homework 4'
-author: "Hao Tang -ID:haot3"
+title: 'Random Forest and Tree on Virtual Twins Model'
+author: "Hao Tang"
 output:
   pdf_document:
     toc: yes
@@ -45,7 +45,7 @@ library(ranger)
 ```
 
 
-## Question 1 [70 Points] Tuning Random Forests in Virtual Twins
+## Tuning Random Forests in Virtual Twins
 
 Personalized medicine draws a lot of attention in medical research. The goal of personalized medicine is to make a tailored decision for each patient, such that his/her clinical outcome can be optimized. Let's consider data modified from the [SIDES method](http://biopharmnet.com/subgroup-analysis-software/). In this dataset, 470 patients and 13 variables are observed. You can download the data from our website. The variables are listed below. 
 
@@ -219,7 +219,7 @@ kable(display.2, caption = "Train and Test MSE ^ 1/2  from 1.model and 0.model")
 - Some of `Health` predicted by the 0 model and 1 model are quite different from the `Health` value from the original dataset. I checked the MSE on both models in the last r chunk. The square root value of both models' MSE from `trainset` and `testset` are presented in `Table.2`. Their values cannot be neglected comparing to the range of the trainset `Health` ***[`r range(trainset[,2])`]*** and testset `Health` ***[`r range(testset[,2])`]***. So even the final label from the Virtual Twins model has ~80% accuracy, the two random forest model do not produce great accuracy individually based on the comparison to the `Health` column.   
 
 
-## Question 2 [30 Points] Second Step in Virtual Twins
+## Second Step in Virtual Twins
   
 The second step in a virtual twins model is to use a single tree model (CART) to describe the choice of the best treatment. Perform the following:
 
