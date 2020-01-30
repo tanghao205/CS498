@@ -1,0 +1,300 @@
+---
+title: 'STAT 542 / CS 598: Homework 7'
+author: "Hao Tang ID: haot3"
+
+header-includes:
+  - \usepackage[ruled,vlined,linesnumbered]{algorithm2e}
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: 2
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '2'
+---
+
+```{r setup, include=FALSE}
+  knitr::opts_chunk$set(include = TRUE)  # TRUE for solution; FALSE for questions set
+
+  knitr::opts_chunk$set(echo = TRUE)
+  knitr::opts_chunk$set(message = FALSE)
+  knitr::opts_chunk$set(warning = FALSE)
+  knitr::opts_chunk$set(fig.height = 6, fig.width = 8, out.width = '50%', fig.align = "center")
+  options(width = 90)
+```
+
+```{css, echo=FALSE}
+.solution {
+background-color: #e6ffe6;
+}
+```
+
+
+```{r, echo=TRUE, include=TRUE}
+rm(list = ls(all = TRUE))
+
+list.of.packages <- c("knitr", "tidyverse", "ggpubr", "ggplot2", "rpart")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)){
+  install.packages(new.packages, repos = "http://cran.us.r-project.org")
+  }
+library(knitr)
+library(tidyverse)
+library(ggplot2)
+library(ggpubr)
+library(rpart)
+```
+
+
+## Question 1 [100 Points] AdaBoost with stump model
+
+Let's write our own code for a one-dimensional AdaBoost using a tree stump model as the weak learner. 
+
+* The stump model is a CART model with just one split, hence two terminal nodes. Since we consider just one predictor, the only thing that needs to be searched in this tree model is the cutting point. Write a function to fit the stump model with subject weights:
+    + __Input__: A set of data ${\cal D}_n =  \{x_i, y_i, w_i\}_{i=1}^n$
+    + __Output__: The cutting point $c$, and node predictions $f_L, f_R \in \{-1, 1\}$
+    + __Step 1__: Search for a splitting rule $\mathbf{1}(x \leq c)$ that will maximize the weighted reduction of Gini impurity.
+$$ \texttt{score} = - \, \frac{\sum_{ {\cal T}_L} w_i}{\sum w_i} \text{Gini}({\cal T}_L) - \frac{\sum_{ {\cal T}_R} w_i}{\sum w_i} \text{Gini}( {\cal T}_R ),$$ where, for given data in a potential node ${\cal T}$, the weighted version of Gini is
+$$ \text{Gini}({\cal T}) = \widehat p (1- \widehat p), \qquad \widehat p = (\textstyle \sum w_i)^{-1} \textstyle\sum w_i I(y_i = 1).$$
+    + __Step 2__: Calculate the left and the right node predictions $f_L, f_R \in \{-1, 1\}$ respectively.
+
+* Based on the AdaBoost algorithm, write your own code to fit the classification model, and perform the following
+    + You are required to implement a `shrinkage` factor $\delta$, which is commonly used in boosting algorithms.
+    + You are not required to do bootstrapping for each tree (you still can if you want).
+    + You should generate the following data to test your code and demonstrate that it is correct.
+    + Plot the exponential loss $n^{-1} \sum_{i=1}\exp\{- y_i \delta \sum_k \alpha_k f_k(x_i)\}$ 
+    + Try a few different `shrinkage` factors and comment on your findings. 
+    + Plot the final model (funtional value of $F$, and also the sign) with the observed data.
+
+```{r}
+  set.seed(1)
+  n = 300
+  x = runif(n)
+  py <- function(x) sin(4*pi*x)/3 + 0.5
+  y = (rbinom(n, 1, py(x))-0.5)*2
+  plot(x, y + 0.1*runif(n, -1, 1), ylim = c(-1.1, 1.1), pch = 19, 
+       col = ifelse(y == 1, "darkorange", "deepskyblue"), ylab = "y")
+  lines(sort(x), py(x)[order(x)] - 0.5)
+  testx = seq(0, 1, length.out = 1000)
+  testy = (rbinom(1000, 1, py(testx))-0.5)*2
+```
+
+
+
+**Solution:**
+
+- **First, let's define the stump with output : c, $f_L$, $f_R$.**
+- **This function is accelerated by the matrix operation**
+
+```{r, echo=TRUE, include=TRUE}
+
+# x is one dimension
+stump = function(x,y,w){
+  scores = c()
+  max.id = which.max(x)
+  n = length(x)
+  
+  base = matrix(rep(x, each = n), ncol = n, byrow = T)
+  base.minus = matrix(rep(x,each = n), ncol = n)
+  LR = base - base.minus
+  LR = LR - 1e-10
+  Left = -sign(sign(LR) - 1)
+  Right = sign(sign(LR) + 1)
+  Left.1 = sign(sign(sign((Left * y) - 0.5) + 1))
+  Right.1 = sign(sign(sign((Right * y) - 0.5) + 1)) 
+  p.l = colSums(Left.1 * w) / colSums(Left * w)
+  p.r = colSums(Right.1 * w) / colSums(Right * w)
+  p.r[max.id] = 0
+  scores1 = - colSums(Left * w) *  (p.l - p.l ^ 2) - colSums(Right * w) *  (p.r - p.r ^ 2)
+  c = x[which.max(scores1)]
+  # Weighted Vote
+  if(sum((((y + 1)/2)*w)[x<=c])/sum(w[x<=c])>=0.5){
+    fl = 1
+  }else{
+    fl = -1
+  }
+  if(sum((((y + 1)/2)*w)[x>c])/sum(w[x>c])>=0.5){
+    fr = 1
+  }else{
+    fr = -1
+  }
+  return(c(c,fl,fr))
+}
+# stump(x,y,rep(1/300,300))
+```
+
+
+- **Then let's define the AdaBoost method. The shrinkage is applied in the $\alpha$ computation.**
+
+```{r, echo=TRUE, include=TRUE}
+myAdaBoost = function(x, y, ntree = 50, shrinkage = 1){
+ n = length(x)
+ w = rep(1/n, n)
+
+ ft = rep(0,n)
+ G = rep(0,n)
+ alphas = c()
+ fls = c()
+ frs = c()
+ cutting.value = c()
+ Gs = list()
+
+ for (i in 1:ntree){
+   value = stump(x,y,w)
+   ft = ifelse(x <= value[1], value[2], value[3])
+   fls = append(fls,value[2])
+   frs = append(frs,value[3])
+   cutting.value = append(cutting.value,value[1])
+   err = sum((1-y*(ft)) / 2 *w)
+   alpha = shrinkage * (1/2)*log((1-err)/(err));
+   alphas = append(alphas,alpha)
+   G = G + alpha * ft
+   Gs[[i]] = G
+   w = w * exp(-alpha*y*ft) # if delta is excluded from alpha, put delta
+   w = w / sum(w)
+ }
+   
+   list(Gs = Gs, alphas=alphas, fls = fls, frs = frs, c = cutting.value, ntree = ntree, G = G)
+}
+```
+
+- **Below is the exponential loss vs. $\delta$ plot. It's `NOT` used to show the smaller skrinkage is better in the fitting the model. ** 
+- **Here is what we want to validated, we can see that the exponential loss will decrease as the iteration increase. The model present reasonable trend.**
+- **Due to time-consuming reason, I didn't show the computation and plot with large number of iterations but in fact exponential loss decrease to very low value(close to `0`). Since the exponential loss is the upper bound to the training error, it turns out the training error can also get to low value, Which actually means overfitting. This also the nature of the AdaBoost model.**
+- **With smaller $\delta$, the decreasing rate is slower and the curve/plot is more smooth. It's relatively uneasy for the model with smaller $\delta$ to get overfitting. So most of time, we prefer smaller shrinkage in training the AdaBoost model. **
+
+
+```{r, echo=TRUE, include=TRUE, fig.height=8, fig.width = 11, out.width='0.65\\textwidth', out.height='0.4\\textwidth'}
+
+number.tree.1 = 1600
+aa.1 = myAdaBoost(x,y,number.tree.1,1)
+yyy.1 = list()
+for (i in 1:number.tree.1){
+  loss.1 = 1/300 * sum(exp(-y * aa.1$Gs[[i]]))
+  yyy.1 = append(yyy.1, loss.1)
+}
+number.tree.2 = 1600
+aa.2 = myAdaBoost(x,y,number.tree.2,0.5)
+yyy.2 = list()
+for (i in 1:number.tree.2){
+  loss.2 = 1/300 * sum(exp(-y * aa.2$Gs[[i]]))
+  yyy.2 = append(yyy.2, loss.2)
+}
+
+number.tree.3 = 1600
+aa.3 = myAdaBoost(x,y,number.tree.3,0.1)
+yyy.3 = list()
+for (i in 1:number.tree.3){
+  loss.3 = 1/300 * sum(exp(-y * aa.3$Gs[[i]]))
+  yyy.3 = append(yyy.3, loss.3)
+}
+
+
+plot(c(1:number.tree.1), yyy.1, col = "Red", ylim = c(0.65, 1), 
+     xlab = 'Number of Tree', ylab = 'Exponential Loss', main = 'Training Data', 
+     cex.lab = 1.5, cex.main=2, cex.axis=1.5)
+points(c(1:number.tree.2), yyy.2, col = "blue")
+points(c(1:number.tree.3), yyy.3, col = "green")
+legend("topright", c("Delta = 0.1","Delta = 0.5", "Delta = 1"), 
+       pch = c(1,1,1), col=c("green", "blue", "red"), cex=1.6, pt.cex = 2)
+
+```
+
+- **Now, we shall verify the model on the testing data bacause we care more about the performance on the testing data.** 
+- **Generally, as the iteration increase, the exponential loss will decrease at the beginning, then it will arrive at a relatively optimal spot then it starts to increase, which is a indication of model overfitting. We can see the detail in the following testing data exponential loss plot.**
+- **With different $\delta$, the minimal spot will be in different iteration (they are different models). When shrinkage/learning rate is too big, the exponential loss will be jittering. As we decrease the shrinkage, the exponential loss will be more smooth. So the best choice is to choose a shrinkage value so we can find the optimal spot with relatively reliable exponential loss minimum.  **
+- **Below is the table for different $\delta$ and their minimal exponential loss iteration and corresponding test error.**
+
+```{r, echo=TRUE, include=TRUE}
+Delta = c("1","0.5","0.1","0.01")
+Iter.min.exploss = c("53","171","1532","16626")
+Exp.loss = c("0.9030822", "0.9092062", "0.9132221", "0.9141218")
+Test.error = c("0.698", "0.698", "0.695", "0.695")
+display = cbind(Delta,Iter.min.exploss,Exp.loss,Test.error)
+kable(display, caption = "Minimal Exponotial Loss in Different Shrinkage")
+```
+
+- **We can see that the lowest test error doesn't change too much in different shrinkage. Actually after specific iteration per different shrinkage, test error will reach its optimal value, this value is pretty similar in different shrinkage. This trend is pretty obvious. What we need to choose is certain shrinkage and the corresponding iteration to get a minimal exponential loss as the parameters for the final model.**
+- **Below I choose $\delta = 0.1$ and plot the exponential vs.number of trees to present the trend. **
+
+
+
+```{r, echo=TRUE, include=TRUE, fig.height=8, fig.width = 11, out.width='0.65\\textwidth', out.height='0.4\\textwidth'}
+number.tree = 3000
+aa = myAdaBoost(x,y,number.tree,0.1)
+
+yyy.test = c()
+ft.test = rep(0,length(testx))
+G.test = rep(0,length(testx))
+for (i in 1:length(aa$alphas)){
+  ft.test[testx<=aa$c[[i]]] = aa$fls[[i]]
+  ft.test[testx>aa$c[[i]]] = aa$frs[[i]]
+  G.test = G.test + aa$alphas[[i]] * ft.test
+  loss.test = 1/length(testx) * sum(exp(-testy * G.test))
+  yyy.test = append(yyy.test, loss.test)
+}
+plot(c(1:length(aa$alphas)), yyy.test, main = "Testing Data with Delta = 0.1",
+     xlab = "Number of Trees", ylab = 'Exponential Loss',
+     cex.lab = 1.5, cex.main=2, cex.axis=1.5, col = 'deepskyblue')
+points(x = 1532, y = 0.9132221, pch = 1, col = "red", cex = 2, lwd = 3)
+legend("topright", c("Minimal Exponential Loss"), 
+       pch = 1, col=c("red"), cex=1.6, pt.cex = 2)
+
+
+final.model = myAdaBoost(x, y, ntree = 1532, shrinkage = 0.1)
+training.accuracy = mean(sign(final.model$G) == y)
+
+ft.test.final = rep(0,length(testx))
+G.test.final = rep(0,length(testx))
+for (i in 1:length(final.model$alphas)){
+  ft.test.final[testx<=final.model$c[[i]]] = final.model$fls[[i]]
+  ft.test.final[testx>final.model$c[[i]]] = final.model$frs[[i]]
+  G.test.final = G.test.final + final.model$alphas[[i]] * ft.test.final
+}
+testing.accuracy = mean(sign(G.test) == testy)
+## small delta will less likely to overfit
+```
+
+- **The final model training accuracy based on my selected setting is `r training.accuracy`.**
+- **The testing accuracy based on my selected value is `r testing.accuracy`. It's a bit lower than the training accuracy, which is reasonable.**
+- **Generally the testing accuracy will be around `0.68 ~ 0.73` when we set different random seed.**
+- ***So far, all the observations show the code/algorithm we used here is correct.***
+
+- **Now we can check the functional value of F with sign. I use the value selected above as the final model**
+- **Number of Trees: `r which.min(yyy.test)`**
+- **Shrinkage ($\delta$) : 0.1**
+
+```{r, echo=TRUE, include=TRUE, fig.height=8, fig.width = 11, out.width='0.65\\textwidth', out.height='0.4\\textwidth'}
+
+F.train = rep(0, length(x))
+for (i in 1:final.model$ntree){
+  F.train = F.train + final.model$alphas[i] * 
+    ifelse(x <= final.model$c[i], final.model$fls[i], 
+           final.model$frs[i])
+}
+plot(x, F.train, col = ifelse(F.train < 0, 'deepskyblue', 'darkorange'), 
+xlab = 'x', ylab = 'Funtional Value of F', main = 'F vs. x in Training Data', 
+cex.lab = 1.5, cex.main=2, cex.axis=1.5)
+lines(sort(x), py(x)[order(x)] - 0.5)
+legend("bottomleft", c("Positive","Negative"), 
+       pch = c(1,1), col=c('darkorange', 'deepskyblue'), cex=1.6, pt.cex = 2)
+```
+
+- **Even in such a simple model the functional value/sign is still somehow related to the py curve after certain iterations since the py function is related to the y value distribution. We can see the similar pattern on the testing data below. **
+
+
+```{r, echo=TRUE, include=TRUE, fig.height=8, fig.width = 11, out.width='0.65\\textwidth', out.height='0.4\\textwidth'}
+# final.model = myAdaBoost(x, y, ntree = 50, shrinkage = 1)
+F.test = rep(0, length(testx))
+for (i in 1:final.model$ntree){
+  F.test = F.test + final.model$alphas[i] * 
+    ifelse(testx <= final.model$c[i], final.model$fls[i], final.model$frs[i])
+}
+plot(testx, F.test, col = ifelse(F.test < 0, 'deepskyblue', 'darkorange'), 
+xlab = 'testx', ylab = 'Funtional Value of F', main = 'F vs. x in Testing Data', 
+cex.lab = 1.5, cex.main=2, cex.axis=1.5)
+lines(sort(testx), py(testx)[order(testx)] - 0.5)
+legend("bottomleft", c("Positive","Negative"), 
+       pch = c(1,1), col=c('darkorange', 'deepskyblue'), cex=1.6, pt.cex = 2)
+```
