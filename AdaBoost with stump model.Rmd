@@ -1,5 +1,5 @@
 ---
-
+title: "AdaBoost with Stump"
 header-includes:
   - \usepackage[ruled,vlined,linesnumbered]{algorithm2e}
 output:
