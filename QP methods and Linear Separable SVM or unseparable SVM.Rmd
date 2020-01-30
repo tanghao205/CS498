@@ -1,6 +1,6 @@
 ---
-title: 'STAT 542 / CS 598: Homework 6'
-author: "Hao Tang ID: haot3"
+title: 'QP methods and Linear Separable SVM or unseparable SVM'
+author: ""
 output:
   pdf_document:
     toc: yes
