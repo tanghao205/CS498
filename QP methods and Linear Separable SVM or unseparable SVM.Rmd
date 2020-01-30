@@ -44,7 +44,7 @@ library(e1071)
 ```
 
 
-## Question 1 [50 Points] Linearly Separable SVM using Quadratic Programming
+## Linearly Separable SVM using Quadratic Programming
 
 Install the `quadprog` package (there are similar ones in Python too) and utilize the function `solve.QP` to solve SVM (dual problem). The `solve.QP` function is trying to perform the minimization problem:
 \begin{align}
@@ -215,7 +215,7 @@ plot.SVM.2D(x, y, beta, beta_0, margin = T, sv = sv)
 ```
 
 
-## Question 2 [25 Points] Linearly Non-seperable SVM using Penalized Loss
+## Linearly Non-seperable SVM using Penalized Loss
 
 We also introduced an alternative method to solve SVM. Consider a logistic loss function 
 
@@ -314,7 +314,7 @@ accuracy.q2.t = mean(fitted.q2.t == y)
 - The prediction accuracy with $\lambda = 1$ is `r accuracy.q2`. 
 - The prediction accuracy with $\lambda = 10$ is `r accuracy.q2.t`. 
 
-## Question 3 [25 Points] Nonlinear and Non-seperable SVM using Penalized Loss
+## Nonlinear and Non-seperable SVM using Penalized Loss
 
 We can further use the kernel trick to solve for a nonlinear decision rule. The optimization becomes 
 
