@@ -1,0 +1,476 @@
+---
+title: 'STAT 542 / CS 598: Homework 3'
+author: "Hao Tang ID: haot3"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: 2
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '2'
+---
+
+```{r setup, include=FALSE}
+  knitr::opts_chunk$set(include = FALSE)  # TRUE for solution; FALSE for questions set
+
+  knitr::opts_chunk$set(echo = TRUE)
+  knitr::opts_chunk$set(message = FALSE)
+  knitr::opts_chunk$set(warning = FALSE)
+  knitr::opts_chunk$set(fig.height = 6, fig.width = 8, out.width = '50%', fig.align = "center")
+  options(width = 90)
+```
+
+```{css, echo=FALSE}
+.solution {
+background-color: #e6ffe6;
+}
+```
+
+```{r, echo=TRUE, include=TRUE}
+rm(list = ls(all = TRUE))
+
+list.of.packages <- c("knitr","splines","tidyverse")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) {
+  install.packages(new.packages, repos = "http://cran.us.r-project.org")
+  }
+library(knitr)
+library(tidyverse)
+library(splines)
+```
+
+
+## Question 1 [50 Points] A Simulation Study
+
+We will perform a simulation study to compare the performance of several different spline methods. Consider the following settings:
+
+* Training data $n=30$: Generate $x$ from $[-1, 1]$ uniformly, and then generate $y = \sin(\pi x) + \epsilon$, where $\epsilon$'s are iid standard normal
+
+**Solution:**
+
+```{r q1a, echo=TRUE, include=TRUE}
+set.seed(1)
+n = 30
+x = runif(30,-1,1)
+epsilon = rnorm(n)
+y = sin(x * pi) + epsilon
+train = cbind(x,y)
+```
+
+
+* Consider several different spline methods:
+  + Write your own code (you cannot use `bs()` or similar functions) to implement a continuous piecewise linear spline fitting. Choose knots at $(-0.5, 0, 0.5)$
+  + Use existing functions to implement a quadratic spline 2 knots. Choose your own knots. 
+  + Use existing functions to implement a natural cubic spline with 3 knots. Choose your own knots. 
+  + Use existing functions to implement a smoothing spline. Use the built-in ordinary leave-one-out cross-validation to select the best tuning parameter. 
+  
+**Solution:**
+  
+```{r q1b, echo=TRUE, include=TRUE}
+
+library(splines)
+
+make.model = function(X,Y,knots){
+  
+train = cbind(X,Y)
+
+pos <- function(x) x*(x>0)
+mybasis = cbind("int" = 1, 
+                "x_1" = train[,1], 
+                "x_2" = pos(train[,1] - knots[1]), 
+                "x_3" = pos(train[,1] - knots[2]),
+                "x_4" = pos(train[,1] - knots[3]))
+lmfit = lm(Y ~ .-1, data = data.frame(mybasis))
+
+# The bs() function for linear spline as reference
+# lmfit.2 = lm(y ~ bs(x, degree = 1, knots = myknots), data = data.frame(train))
+
+# Quadratic spline with 2 knots
+quadfit = lm(Y ~ bs(X, degree = 2, knots = knots[-1]), data = data.frame(train))
+
+# Natural Cubic Spline, the knots are automatically interior knots.
+NCSfit = lm(y ~ ns(X, knots = knots), data = data.frame(train))
+
+# Smoothing Spline
+Smoothfit = smooth.spline(x = train[,1],y = train[,2], cv = T)
+
+
+my.return = list(lmfit, quadfit, NCSfit, Smoothfit, Smoothfit$lambda, Smoothfit$df)
+return(my.return)
+
+}
+
+# The first fits
+myknots = c(-0.5, 0, 0.5)
+example.fit = make.model(x,y,myknots)
+
+```  
+
+- The best smoothing parameter of the smoothing spline is **`r example.fit[[5]]`**. Its corresponding degree of freedom is **`r example.fit[[6]]`**.
+- The knots for linear spline and Natural cubid spline is (-0.5, 0, 0.5), the knots for quadratic spline is (0, 0.5)
+
+**-----------------------------------------------------------------------------------------------------------------**  
+
+* After fitting these models, evaluate their performances by comparing the fitted functions with the true function value on an equispaced grid of 1000 points on $[-1, 1]$. Use the squared distance as the metric.
+
+**Solution:**
+
+```{r q1c, echo=TRUE, include=TRUE}
+grid = seq(-1,1,abs(-1-1)/999)
+myknots = c(-0.5,0,0.5)
+pos <- function(x) x*(x>0)
+grid.linear = cbind(
+                "int" = 1,
+                "x_1" = grid, 
+                "x_2" = pos(grid - myknots[1]), 
+                "x_3" = pos(grid - myknots[2]),
+                "x_4" = pos(grid - myknots[3]))
+# Prediction from 4 models
+y.truth = sin(grid * pi)
+linear.predict = predict(example.fit[[1]], newdata = data.frame(grid.linear))
+quadratic.predict = predict(example.fit[[2]], newdata = data.frame(X = grid))
+ncs.predict = predict(example.fit[[3]], newdata = data.frame(X = grid))
+ss.predict = predict(example.fit[[4]], x = grid)[[2]]
+#lines(grif, prediction, lty = 1, col = "deepskyblue", lwd = 3)
+distance.to.linear = sum((y.truth - linear.predict) ^ 2)
+distance.to.quadratic = sum((y.truth - quadratic.predict) ^ 2)
+distance.to.ncs = sum((y.truth - ncs.predict) ^ 2)
+distance.to.ss = sum((y.truth - ss.predict) ^ 2)
+```
+
+- Squared distance from Linear model: **`r round(distance.to.linear, 2)`**
+- Squared distance from Quadratic model: **`r round(distance.to.quadratic, 2)`**
+- Squared distance from Natural Cubic Spline model: **`r round(distance.to.ncs, 2)`**
+- Squared distance from Smoothing Spline model: **`r round(distance.to.ss, 2)`**
+- The above metric shows the Quadratic model is better on the distance to the true function in this round.
+  
+**-----------------------------------------------------------------------------------------------------------------**  
+
+* Repeat the entire process 200 times. Record and report the mean, median, and standard deviation of the errors for each method. Also, provide an informative boxplot that displays the error distribution for all models side-by-side.
+   
+**Solution:**
+
+```{r q1d, fig.width = 10, fig.height = 7, fig.fullwidth = TRUE, echo=TRUE, include=TRUE}
+
+# Combine the fitting model and distance calculation into function
+measure = function(X,Y,knots,grid){
+  
+  train = cbind(X,Y)
+  
+  pos <- function(x) x*(x>0)
+  mybasis = cbind("int" = 1, 
+                  "x_1" = train[,1], 
+                  "x_2" = pos(train[,1] - knots[1]), 
+                  "x_3" = pos(train[,1] - knots[2]),
+                  "x_4" = pos(train[,1] - knots[3]))
+  lmfit = lm(Y ~ .-1, data = data.frame(mybasis))
+  
+  # The bs() function for linear spline as reference
+  # lmfit.2 = lm(y ~ bs(x, degree = 1, knots = myknots), data = data.frame(train))
+  
+  # Quadratic spline
+  quadfit = lm(Y ~ bs(X, degree = 2, knots = knots[-1]), data = data.frame(train))
+  
+  # Natural Cubic Spline
+  NCSfit = lm(y ~ ns(X, knots = knots), data = data.frame(train))
+  
+  # Smoothing Spline
+  Smoothfit = smooth.spline(x = train[,1],y = train[,2], cv = TRUE)  
+  
+  # c(lmfit, quadfit, NCSfit, Smoothfit)
+
+  grid.linear = cbind(
+                  "int" = 1,
+                  "x_1" = grid, 
+                  "x_2" = pos(grid - knots[1]), 
+                  "x_3" = pos(grid - knots[2]),
+                  "x_4" = pos(grid - knots[3]))
+  
+  # True curve and prediction from 4 models
+  y.truth = sin(grid * pi)
+  linear.predict = predict(lmfit, newdata = data.frame(grid.linear))
+  quadratic.predict = predict(quadfit, newdata = data.frame(X = grid))
+  ncs.predict = predict(NCSfit, newdata = data.frame(X = grid))
+  ss.predict = predict(Smoothfit, x = grid)[[2]]
+  
+  distance.to.linear = sum((y.truth - linear.predict) ^ 2)
+  distance.to.quadratic = sum((y.truth - quadratic.predict) ^ 2)
+  distance.to.ncs = sum((y.truth - ncs.predict) ^ 2)
+  distance.to.ss = sum((y.truth - ss.predict) ^ 2)
+
+  mydistance = c(distance.to.linear, distance.to.quadratic, distance.to.ncs, distance.to.ss)
+  return(mydistance)
+}
+
+result = c()
+set.seed(1)
+for (i in 1:200){
+  x = runif(30,-1,1)
+  epsilon = rnorm(n)
+  y = sin(x * pi) + epsilon
+  result = rbind(result,measure(x, y, knots = myknots, grid = grid))
+}
+# apply(result,2,max)
+# apply(result,2,min)
+error.median = apply(result, 2, median)
+error.mean = apply(result, 2, mean)
+error.sd = apply(result, 2, sd)
+```
+
+
+  
+- Below is the mean/median/sd table for each method.  
+
+```{r table1, echo=TRUE, include=TRUE}
+table1 = rbind(error.median, error.mean, error.sd)
+colnames(table1) = c("Linear", "Quadratic", "NCS", "Smoothing Spline")
+kable(table1, caption = "Mean, Median, and Standard deviation of the errors")
+```
+  
+**-----------------------------------------------------------------------------------------------------------------**  
+
++ The boxplot below shows the range of the errors. The natural cubic spline has the lowest median error and it's error distribution is relative more compact. The linear spline and quadratic spline with 2 knots are pretty similar to each other although the quadrtic model has wider range of error. The smoothing spline has wider error distribution and it try to smooth the fitting funciton. If we increase the loop number, the error of all four models will getting closer to each others.  
+
+```{r boxplot, echo=TRUE, include=TRUE}
+par(mar = c(6, 10, 4, 2) + 0.1)
+boxplot(result[,1], result[,2], result[,3], result[,4],
+        main = "Boxplots for Error Comparision",
+        names = c("Linear", "Quadratic", "NCS", "Smoothing Spline"),
+        col = c("orange","red","purple","yellow"),
+        horizontal = T,
+        las = 1,
+        xlab = "Error comparing to true function value "
+        )
+boxplot(result[,1], result[,2], result[,3], result[,4],
+        main = "Boxplots for Error in Detail",
+        names = c("Linear", "Quadratic", "NCS", "Smoothing Spline"),
+        col = c("orange","red","purple","yellow"),
+        horizontal = T,
+        ylim = c(0, 1000),
+        las = 1,
+        xlab = "Error comparing to true function value "
+        )
+```
+  
+
+**-----------------------------------------------------------------------------------------------------------------**  
+
+
+* Comment on your findings. Which method would you prefer?
+
+**Solution:**
+
+- Accorindg to the computation result and boxplots, natural cubic spline is with best error range and smaller standard deviation. I will choose the natural cubic spline model. 
+
+
+## Question 2 [50 Points] Multi-dimensional Kernel and Bandwidth Selection
+
+Let's consider a regression problem with multiple dimensions. For this problem, we will use the Combined Cycle Power Plant (CCPP) Data Set available at the UCI machine learning repository. The goal is to predict the net hourly electrical energy output (EP) of the power plant. Four variables are available: Ambient Temperature (AT), Ambient Pressure (AP), Relative Humidity (RH), and Exhaust Vacuum (EV). For more details, please go to the [dataset webpage](https://archive.ics.uci.edu/ml/datasets/Combined+Cycle+Power+Plant). We will use a kernel method to model the outcome. A multivariate Gaussian kernel function defines the distance between two points:
+$$ K_{\boldsymbol \lambda}(x_i, x_j) = e^{-\frac{1}{2} \sum_{k=1}^p \left((x_\text{ik} - x_\text{jk})/\lambda_k\right)^2}$$
+The most crucial element in kernel regression is the bandwidth $\lambda_j$. A popular choice is the Silverman formula. The bandwidth for the $j$th variable is given by
+$$\lambda_j = \left(\frac{4}{p+2}\right)^{\frac{1}{p+4}} n^{-\frac{1}{p+4}} \, \, \widehat \sigma_j,$$
+where $\widehat\sigma_j$ is the estimated standard deviation for variable $j$, $p$ is the number of variables, and $n$ is the sample size. Based on this kernel function, use the Nadaraya-Watson kernel estimator to fit and predict the data. You should consider the following:
+
+* Randomly select 2/3 of the data as training data, and rest as testing. Make sure you set a random seed. You do not need to repeat this process --- just fix it and complete the rest of the questions
+
+**Solution:**
+
+```{r q2a, echo=TRUE, include=TRUE}
+library(readr)
+CCPP <- read_csv("CCPP.csv")
+CCPP = as.matrix(CCPP)
+set.seed(1)
+train = sample(1:nrow(CCPP), round(nrow(CCPP) * 2/3))
+test = (-train)
+X.train = as.matrix(CCPP[train,-5])
+X.test = as.matrix(CCPP[test,-5])
+y.train = CCPP[train,5]
+y.test = CCPP[test,5]
+
+```  
+  
+**-----------------------------------------------------------------------------------------------------------------** 
+
+* Fit the model on the training samples using the kernel estimator and predict on the testing sample. Calculate the prediction error and compare this to a linear model
+
+**Solution:**
+
+```{r q2b, echo=TRUE, include=TRUE}
+# X, y must be matrix
+b = Sys.time()
+myNW = function(X.train, y.train, X.test){
+
+  p = dim(X.train)[2]
+  n = dim(X.train)[1]
+  sigma = apply(X.train, 2, sd)
+  lambda = (4/(p+2)) ^ ((p+4) ^ (-1)) * n ^ (-(1/(p+4))) * sigma
+  X.train = t(t(X.train)/lambda)
+  X.test = t(t(X.test)/lambda)
+  
+  
+
+  # Make the matrix for calculation
+  
+  X.test.square.sum = rowSums(X.test ^ 2)
+  X.train.square.sum = rowSums(X.train ^ 2)
+  
+  X.test.formed = matrix(rep(X.test.square.sum, each = n), 
+                             ncol=n, byrow=TRUE)
+  X.train.formed = matrix(rep(X.train.square.sum, each=dim(X.test)[1])
+                       ,nrow=dim(X.test)[1])
+  
+
+  diff.sum = X.test.formed + X.train.formed - 
+            2 * X.test %*% t(X.train)
+    
+  kernel = exp((-0.5) * diff.sum)
+  kernel.sum = rowSums(kernel)
+  numerator = t(t(kernel) * y.train)
+  
+  prediction = rowSums(numerator/kernel.sum)
+  return(prediction)
+}
+
+myNW.prediction = myNW(X.train, y.train, X.test)
+
+error.myNW = mean((myNW.prediction - y.test)^2)
+
+CCPP.lm = lm(PE~., data = data.frame(CCPP[train,]))
+
+#"AT" "EV" "AP" "RH"
+lm.prediction = predict(CCPP.lm, newdata = data.frame(CCPP[test,]))
+
+error.lm = mean((lm.prediction - y.test) ^ 2)
+
+time1 = Sys.time() - b
+```  
+
+
+- The prediction error from Nadaraya-Watson kernel estimator is **`r error.myNW`**.
+- The prediction error from linear model is **`r error.lm`**.
+- The kernel method provide better accuracy.
+- This part'running take `r round(time1,3)` s.  
+  
+**-----------------------------------------------------------------------------------------------------------------**    
+  
+
+* The bandwidth selection may not be optimal in practice. Experiment a few choices and see if you can achieve a better result. 
+  
+**Solution:**
+
+***This section may take ~20 second to run with different lambda***
+
+```{r q2c, echo=TRUE, include=TRUE}
+# Edit myNW function to compare different bandwidth
+
+b = Sys.time()
+p = dim(X.train)[2]
+n = dim(X.train)[1]
+
+
+myNW.edited = function(X.train, y.train, X.test, a){
+
+  p = dim(X.train)[2]
+  n = dim(X.train)[1]
+  sigma = apply(X.train, 2, sd)
+  lambda = (4/(p+2)) ^ ((p+4) ^ (-1)) * n ^ (-(1/(p+4))) * sigma * a
+  kernel = exp(-0.5 * sum())
+  X.train = t(t(X.train)/lambda)
+  X.test = t(t(X.test)/lambda)
+
+  # Make the matrix for calculation
+  
+  X.test.square.sum = rowSums(X.test ^ 2)
+  X.train.square.sum = rowSums(X.train ^ 2)
+  
+  X.test.formed = matrix(rep(X.test.square.sum, each = n), 
+                             ncol=n, byrow=TRUE)
+  X.train.formed = matrix(rep(X.train.square.sum, each=dim(X.test)[1])
+                       ,nrow=dim(X.test)[1])
+  
+
+  diff.sum = X.test.formed + X.train.formed - 
+            2 * X.test %*% t(X.train)
+  
+  kernel = exp((-0.5) * diff.sum)
+  kernel.sum = rowSums(kernel)
+  numerator = t(t(kernel) * y.train)
+  
+  prediction = rowSums(numerator/kernel.sum)
+  return(prediction)
+}
+
+error.compare = c()
+
+for (i in seq(0.37,0.41,0.01)){
+  predict.compare = myNW.edited(X.train, y.train, X.test, i)
+  error.compare = append(error.compare, mean((predict.compare - y.test)^2))
+}
+
+plot(seq(0.37,0.41,0.01), error.compare, type = "b", col = "orange",
+main = "Error Comparison with Multiplying Coefficient",
+xlab = "Coefficient", ylab = "Error", lwd = 3)
+
+
+
+time2 = Sys.time() - b
+
+``` 
+
+- I chose different bandwidth value by mutiplying coefficient($\mathbf{a}$) to the lambda ($\lambda$ * $\mathbf{a}$), and the range of coefficient at [0.35,0.45] is best. 
+- The Error vs. Coefficient curve is plotted above. The minimal is at $\mathbf{a} = 0.39$. The corresponding error is **`r min(error.compare)`**.
+- Corresponding Lambda of the four variable is **`r (4/(p+2)) ^ ((p+4) ^ (-1)) * n ^ (-(1/(p+4))) * apply(X.train, 2, sd) * 0.39`**.
+- With the larger coefficient, the lambda/window is wider, the variance will be smaller and bias will be higher. With the smaller coefficient, the lambda/window is narrow, the variance will be larger and bias will be lower. So there is a optimal spot to the lambda.
+- Time consuming in this comparison is `r round(time2,3)` s.
+- According to the coefficient adjustment, it seems like all the $\lambda$ has a optimal value that can minimized the error without correlation. 
+- I try to explore the global optimal coefficient by replacing the consistant coefficient $\mathbf{a}$ with a coefficient vector. Even though we apply matrix operation here, the compuatation is still expensive. Each combination of cofficeint will take around 2.5s. Without put the whole computation into the r chunk, I just put the optimized coefficient value as reference. The best coefficient is **`r c(0.36,0.01,0.32,0.89)`**. It's correspondint lambda is **`r (4/(p+2)) ^ ((p+4) ^ (-1)) * n ^ (-(1/(p+4))) * apply(X.train, 2, sd) * c(0.36,0.01,0.32,0.89)`**. With this, we can get the error: ***`r mean((myNW.edited(X.train, y.train, X.test, c(0.36,0.01,0.32,0.89)) - y.test)^2)`***. It's much better than the linear model's result.
+- I try 100 train and test sample and they are all in the range of **[18.9, 23.9]**. The same train and test samples with specific random seed, are applied to the kernel methods, the range is **[8.2, 11.8]**. So the coefficient ***`r c(0.36,0.01,0.32,0.89)`*** together with the Silverman formula does attain better accuracy to our dataset. Below are the test methods, I will not make it run code in the .rmd file since it takes more than 3 mins. 
+
+```{r q2_test, echo=TRUE, include=TRUE}
+
+## The linear method testing, n is times of test
+# test.lm = function(n,CCPP){
+# set.seed(1)
+# c = c()
+# for (i in 1:n){
+# train = sample(1:nrow(CCPP), round(nrow(CCPP) * 2/3))
+# test = (-train)
+# X.train = as.matrix(CCPP[train,-5])
+# X.test = as.matrix(CCPP[test,-5])
+# y.train = CCPP[train,5]
+# y.test = CCPP[test,5]
+# CCPP.lm = lm(PE~., data = data.frame(CCPP[train,]))
+# 
+# #"AT" "EV" "AP" "RH"
+# lm.prediction = predict(CCPP.lm, newdata = data.frame(CCPP[test,]))
+# 
+# error.lm = mean((lm.prediction - y.test) ^ 2)
+# c = append(c, error.lm)
+# }
+# return(range(c))
+# }
+# 
+## The kernel method testing, n is times of test
+# test.kernel = function(n,CCPP){
+#   set.seed((1))
+#   error.compare = c()
+#   for (i in 1:n){
+#   train = sample(1:nrow(CCPP), round(nrow(CCPP) * 2/3))
+#   test = (-train)
+#   X.train = as.matrix(CCPP[train,-5])
+#   X.test = as.matrix(CCPP[test,-5])
+#   y.train = CCPP[train,5]
+#   y.test = CCPP[test,5]  
+#   predict.compare = myNW.edited(X.train, y.train, X.test, c(0.36,0.01,0.32,0.89))
+#   error.compare = append(error.compare, mean((predict.compare - y.test)^2))  
+#   }
+#   return(range(error.compare))
+# }
+
+```  
+
+
+**-----------------------------------------------------------------------------------------------------------------** 
+
+* During all calculations, make sure that you write your code efficiently to improve computational performance
