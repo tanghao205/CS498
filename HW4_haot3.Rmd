@@ -1,0 +1,349 @@
+---
+title: 'STAT 542 / CS 598: Homework 4'
+author: "Hao Tang -ID:haot3"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: 2
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '2'
+---
+
+```{r setup, include=FALSE}
+  knitr::opts_chunk$set(include = FALSE)  # TRUE for solution; FALSE for questions set
+  knitr::opts_chunk$set(echo = TRUE)
+  knitr::opts_chunk$set(message = FALSE)
+  knitr::opts_chunk$set(warning = FALSE)
+  knitr::opts_chunk$set(fig.height = 6, fig.width = 8, out.width = '50%', fig.align = "center")
+  options(width = 90)
+```
+
+```{css, echo=FALSE}
+.solution {
+background-color: #e6ffe6;
+}
+```
+
+```{r, echo=TRUE, include=TRUE}
+rm(list = ls(all = TRUE))
+
+list.of.packages <- c("knitr","mlbench","tidyverse","rpart.plot","rpart","ranger", "lattice")
+# c("knitr","mlbench","tidyverse","rpart.plot","rpart","ranger","randomForest")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)){
+  install.packages(new.packages, repos = "http://cran.us.r-project.org")
+  }
+library(knitr)
+library(tidyverse)
+library(rpart)
+library(rpart.plot)
+library(mlbench)
+library(lattice)
+library(ranger)
+```
+
+
+## Question 1 [70 Points] Tuning Random Forests in Virtual Twins
+
+Personalized medicine draws a lot of attention in medical research. The goal of personalized medicine is to make a tailored decision for each patient, such that his/her clinical outcome can be optimized. Let's consider data modified from the [SIDES method](http://biopharmnet.com/subgroup-analysis-software/). In this dataset, 470 patients and 13 variables are observed. You can download the data from our website. The variables are listed below. 
+
+* `Health`: health outcome (larger the better)
+* `THERAPY`: 1 for active treatment, 0 for the control treatment
+* `TIMFIRST`: Time from first sepsis-organ fail to start drug
+* `AGE`: Patient age in years
+* `BLLPLAT`: Baseline local platelets
+* `blSOFA`: Sum of baseline sofa score (cardiovascular, hematology, hepatorenal, and respiration scores)
+* `BLLCREAT`: Base creatinine
+* `ORGANNUM`: Number of baseline organ failures
+* `PRAPACHE`: Pre-infusion apache-ii score
+* `BLGCS`: Base GLASGOW coma scale score
+* `BLIL6`: Baseline serum IL-6 concentration
+* `BLADL`: Baseline activity of daily living score
+* `BLLBILI`: Baseline local bilirubin
+* `BEST`: The true best treatment suggested by Doctors. __You should not use this variable when fitting the model__!
+
+For each patient, sepsis was observed during their hospital stay. Hence, they need to choose one of the two treatments (indicated by variable `THERAPY`) to prevent further adverse events. After the treatment, their health outcome (`health`) were measured, with a larger value being the better outcome. However, since treatments were assigned randomly, we are not able to suggest better treatment for a new patient. A strategy called [Virtual Twins](https://onlinelibrary.wiley.com/doi/abs/10.1002/sim.4322) was proposed by Foster et al. (2011) to tackle this problem. We consider a simpler version of the method. We fit two random forests to model the outcome `health`: one model uses all patients who received treatment 1, and another model for all patients who received treatment 0. Denote these two models as $\widehat f_1(x)$ and $\widehat f_0(x)$, respectively. When a new patient arrives, we use both models to predict the outcomes and see which model gives a better health status. We will suggest the treatment label associated with the model that gives a larger prediction value. In other words, for a new $x^\ast$, we compare $\widehat f_1(x^\ast)$ and $\widehat f_0(x^\ast)$ and suggest the better lable. The goal for this question is to select tuning parameters for random forest such that it will suggest the best treatment for a patient. Perform the following:
+
+* Randomly split the data into 75% for training and 25% for testing.  
+
+**Solution:**  
+```{r q1a, echo=TRUE, include=TRUE}
+# Train set and Test set split
+Sepsis = read.csv("H:\\UIUC MCS-DS\\Pratical Statistical Learning\\Homework\\HW4\\Sepsis.csv", 
+                  stringsAsFactors=FALSE)
+n = nrow(Sepsis)
+test = round(n * 0.25)
+set.seed(4)
+testid = sample(1:n,test)
+trainset = Sepsis[-testid,]
+testset = Sepsis[testid,]
+```
+
+**-------------------------------------------------------------------------------------------**  
+
+* For the training data, fit the virtual twins model and then use the testing data to suggest the best treatment. 
+  + You should not use the variable `BEST` when fitting the models
+  + Pick three different `mtry` values and three different `nodesize`, leave all other tuning parameters as default
+  + After predicting the best treatment in the testing data, compare it to the truth `BEST`
+  
+**Solution:**  
+
+   Below is the whole process.
+
+```{r q1b, echo=TRUE, include=TRUE}
+set.seed(2)
+
+rf.predict.ranger = function(testset, X.1, X.0, nodesize, mtry){
+  rfModel.1 = ranger(Health ~ ., data = X.1, min.node.size = nodesize, 
+                            mtry = mtry)
+  rfModel.0 = ranger(Health ~ ., data = X.0, min.node.size = nodesize,
+                           mtry = mtry)
+  # Result of first two trees
+  Zl = predict(rfModel.1, testset[,-c(1,3,15)])$predictions >= predict(rfModel.0,
+         testset[,-c(3,15)])$predictions
+  prediction = sum(Zl == testset[,15])/length(Zl)
+  prediction
+}
+
+one.run.ranger = function(trainset, testset){
+  
+  trainset.1 = trainset[trainset[,3] == 1,]
+  trainset.0 = trainset[trainset[,3] == 0,]
+  X.1 = trainset.1[,-c(1,3,15)]
+  X.0 = trainset.0[,-c(1,3,15)]
+  predict.vector = c()
+  for (nodesize in c(40,60,80)){
+    for (mtry in c(3,4,5)){
+      predict.vector = append(predict.vector, 
+                              rf.predict.ranger(testset, X.1, X.0, nodesize, mtry))
+    }
+  }
+  predict.vector
+}
+```
+
+**-------------------------------------------------------------------------------------------**  
+  
+* Repeat this entire process 100 times and average the prediction errors
+  
+**Solution:**
+
+  The average prediction errors are in `predict.vector.100`. 
+
+```{r q1c1, echo=TRUE, include=TRUE}
+set.seed(2)
+predict.vector.100 = c()
+b = Sys.time()
+for (i in c(1:100)){
+  testid = sample(1:n,test)
+  trainset = Sepsis[-testid,]
+  testset = Sepsis[testid,]
+  predict.vector.100 = append(predict.vector.100, one.run.ranger(trainset, testset))
+}
+Sys.time() - b
+apply(matrix(predict.vector.100,100,9,byrow = T),2,mean)
+```
+  
+**-------------------------------------------------------------------------------------------**  
+
+* Summarize your results, including the model performance and the effect of tuning parameters. Intuitively demonstrate them.
+
+**Solution:**
+```{r d1, echo=TRUE, include=TRUE, out.width='.8\\textwidth'}
+predict.matrix = matrix(predict.vector.100,100,9,byrow = T)
+predict.mean = apply(predict.matrix,2,mean) 
+display = matrix(predict.mean,3,3,byrow = T)
+rownames(display) = c("40 nodes", "60 nodes", "80 nodes")
+colnames(display) = c("mtry = 3", "mtry = 4", "mtry = 5")
+
+
+
+
+
+kable(display, caption = "Accuracy on different mtry and node size")
+library(lattice)
+x = c("mtry = 3", "mtry = 4", "mtry = 5")
+plot(c(0,0,0), axes=FALSE, ylim = c(0.755,0.825), type = 'b', xlab = "", 
+     ylab = "Mean Accuracy",main = "Mean Accuracy with Tuning Paramters")
+lines(display[1,],col = 'red', type = 'b')
+lines(display[2,],col = 'green', type = 'b')
+lines(display[3,],col = 'blue', type = 'b')
+axis(2)
+axis(1, at=seq_along(display[1,]),labels=as.character(x), las=1)
+legend('topright', c("40 nodes", "60 nodes", "80 nodes"), col = c('red','green','blue'), lty = 1)
+```
+
+```{r q1d2, echo=TRUE, include=TRUE, out.width='.8\\textwidth'}
+
+# Investigate the random forest model accuracy
+set.seed(4)
+testid = sample(1:n,test)
+trainset = Sepsis[-testid,]
+testset = Sepsis[testid,]
+
+trainset.1.H = trainset[trainset[,3] == 1,]
+trainset.0.H = trainset[trainset[,3] == 0,]
+X.1.H = trainset.1.H[,-c(1,3,15)]
+X.0.H = trainset.1.H[,-c(1,3,15)]
+
+rfModel.1.H = ranger(Health ~ ., data = X.1.H, min.node.size = 60, 
+                            mtry = 5)
+rfModel.0.H = ranger(Health ~ ., data = X.0.H, min.node.size = 60,
+                           mtry = 5)
+
+# Compare Virtual Twins prediction to the Health column in the trainset
+MSE.1.H.train = mean((predict(rfModel.1.H,
+          trainset.1.H[,-c(1,2,3,15)])$predictions - trainset.1.H[,2])^2)
+MSE.0.H.train = mean((predict(rfModel.0.H,
+          trainset.0.H[,-c(1,2,3,15)])$predictions - trainset.0.H[,2])^2)
+
+# Compare Virtual Twins prediction to the Health column in the testset
+MSE.0.H.test = mean((predict(rfModel.0.H,
+          testset[,-c(1,2,3,15)])$predictions - testset[,2])^2)
+MSE.1.H.test = mean((predict(rfModel.1.H,
+          testset[,-c(1,2,3,15)])$predictions - testset[,2])^2)
+display.2 = matrix(c(MSE.1.H.train^0.5, MSE.0.H.train^0.5,
+                     MSE.1.H.test^0.5, MSE.0.H.test^0.5),2,2)
+colnames(display.2) = c("Trainset Health MSE ^ 1/2", "Testset Health MSE ^ 1/2")
+rownames(display.2) = c("1.model", "0.model")
+kable(display.2, caption = "Train and Test MSE ^ 1/2  from 1.model and 0.model")
+
+```
+  
+
+- I try mtry = 3,4,5 because the $p/3$ is close to **4** in this dataset after removing `X`, `BEST`, `THERAPY` and the response `Health`. I also try different node size and the value around 40~80 is optimal. According to `Table.1` and `Mean accuracy` plot above, the tree with 60 node size and 5 candidate variables is slightly better. In the table, we can see the accuracy difference is not much different as tuning paramters change. 
+- The accuracy does increase as `mtry` increases given the same minimal node size. This is very possible since we increase the candidate number so it's likely to choose the optimal candidate to produce the accuracy based on the output of the VT random forest model. The increasing process is in fact decreasing the bias. But, increasing `mtry` also increase the correlation between models. If the correlation is too high, the following average cannot reduce variance thus the variance will be large. The bias-variance trade-off here shall generate a optimal spot to `mtry` value where the MSE will be minimized. In this problem, I wouldn't choose a value that's far away from the default value: $p/3 = 4$.
+- Increasing the node size will decrease the tree depth and the computation time. Also, increasing min node size means lower the tree depth, which shall lower the possibility of overfit from a fully-grown trees and make the model more stable (less variance). However, we don't want to make the minimal node size too big to prevent growing an optimal tree either. I tried different values of node size and choose the best value. There aren't remarkable performance difference during node size change unless it's tuned to over 100. 
+- Some of `Health` predicted by the 0 model and 1 model are quite different from the `Health` value from the original dataset. I checked the MSE on both models in the last r chunk. The square root value of both models' MSE from `trainset` and `testset` are presented in `Table.2`. Their values cannot be neglected comparing to the range of the trainset `Health` ***[`r range(trainset[,2])`]*** and testset `Health` ***[`r range(testset[,2])`]***. So even the final label from the Virtual Twins model has ~80% accuracy, the two random forest model do not produce great accuracy individually based on the comparison to the `Health` column.   
+
+
+## Question 2 [30 Points] Second Step in Virtual Twins
+  
+The second step in a virtual twins model is to use a single tree model (CART) to describe the choice of the best treatment. Perform the following:
+
+- Based on your optimal tuning parameter, fit the Virtual Twins model   described in Question 1. Again, you should not use the `BEST` variable.
+
+- For each subject, obtain the predicted best treatment of the training data itself
+- Treating the label of best treatment as the outcome, and fit a single tree model to predict it. Be careful which variables should be removed from this model fitting.
+- Consider tuning the tree model using the cost-complexity tuning.
+
+**Solution:**
+
+```{r q2a, echo=TRUE, include=TRUE}
+## Fit the Virtual Twin model
+# Use the whole dataset to fit the model according to TA's post @402 on Piazza
+set.seed(2)
+Sepsis.1 = Sepsis[Sepsis[,3] == 1,]
+Sepsis.0 = Sepsis[Sepsis[,3] == 0,]
+X.Sepsis.1 = Sepsis.1[,-c(1,3,15)]
+X.Sepsis.0 = Sepsis.0[,-c(1,3,15)]
+location = order(predict.mean, decreasing = T)[1]
+##node.size is 40,60,80, mtry is 3,4,5 in Question 1
+node.size.best = c(40, 60, 80)[(location-1) %/% 3 + 1]
+mtry.best = c(3,4,5)[(location-1) %% 3 + 1]
+rfModel.1.train = ranger(Health ~ ., data = X.Sepsis.1, 
+                         min.node.size = node.size.best, mtry = mtry.best)
+rfModel.0.train = ranger(Health ~ ., data = X.Sepsis.0, 
+                         min.node.size = node.size.best, mtry = mtry.best)
+```
+
+```{r q2b, echo=TRUE, include=TRUE}
+## Put the prediction result from the training data into the trainset
+Zl.Sepsis = predict(rfModel.1.train, Sepsis[,-c(1,3,15)])$predictions >= 
+  predict(rfModel.0.train, Sepsis[,-c(1,3,15)])$predictions
+
+Zl.cl = as.factor(as.integer(Zl.Sepsis))
+
+new.Sepsis = cbind(Sepsis, Zl.cl)
+```
+
+```{r q2c, echo=TRUE, include=TRUE, out.width='.8\\textwidth'}
+## Fit a single tree
+single.tree = rpart(Zl.cl ~ ., data = new.Sepsis[,-c(1,2,3,15)], 
+                    method = "class", control = list(cp = 0))
+
+## Calculate the Virtual Twins model accuracy and Single Tree accuracy.
+ # The single tree is built to describe the virtual twins result.
+
+VT.accuracy = sum(new.Sepsis[,16] == new.Sepsis[,15])/dim(Sepsis)[1]
+
+tree.result = predict(single.tree, 
+                      newdata = new.Sepsis[,-c(1,2,3,15,16)])
+tree.accuracy = sum((tree.result[,1]<tree.result[,2]) == new.Sepsis[,15])/dim(Sepsis)[1]
+
+## The cp table
+printcp(single.tree)
+
+## The cp plot
+plotcp(single.tree)
+
+## 1se method
+
+## Calculate the minimal cv error and corresponding cv standard error  
+ # for the cost parameters. 
+row = order(single.tree$cptable[,4])[1]
+se = single.tree$cptable[row,5]
+lowest.row = 0
+for (i in 1:length(single.tree$cptable[,4])){  
+  if(single.tree$cptable[i,4]>=(single.tree$cptable[row,4] + se)){
+    lowest.row = lowest.row + 1
+  } else{
+    break
+  }
+}
+cp.1se = (single.tree$cptable[lowest.row,1] + single.tree$cptable[lowest.row + 1,1])/2
+
+## Prune the tree using 1se rule
+single.tree.pruned = prune(single.tree, cp = cp.1se)
+
+
+## Minimal xerror method
+row.m = order(single.tree$cptable[,4])[1]
+cp.best = (single.tree$cptable[row.m,1] + single.tree$cptable[row.m-1,1]) / 2
+single.tree.pruned.m = prune(single.tree, cp = cp.best)
+
+```
+
+
+```{r q2d, echo=TRUE, include=TRUE, out.width='.8\\textwidth'}
+## Below tree plot show the probability of 1 on the right and
+ # probability of 0 on the left in each split. 
+par(mfrow = c(1, 1))
+par(mar=rep(0.5,4))
+rpart.plot(single.tree, roundint = F, main = "Whole Tree with NO Pruning",
+           cex.main = 1, cex = 0.7, extra = 104, shadow.col
+ = 'grey')
+par(mfrow = c(1, 2))
+
+## Below tree plot show the probability of 1 on the right and
+ # probability of 0 on the left in each split. 
+par(mar=rep(3,4))
+rpart.plot(single.tree.pruned, roundint = F, main = "Pruned Tree with 1se Rule",
+           cex.main = 1, cex = 1, extra = 104, shadow.col
+ = 'grey')
+rpart.plot(single.tree.pruned.m, roundint = F, main = "Pruned Tree with minimal Xerror",
+           cex.main = 1, cex = 1, extra = 104, shadow.col
+ = 'grey')
+```
+```{r q2e, echo=TRUE, include=TRUE}
+## The accuracy from the pruned tree (two methods) comparing to the BEST.
+pruned.tree.result = predict(single.tree.pruned, 
+                      newdata = new.Sepsis[,-c(1,2,3,15,16)])
+pruned.tree.accuracy = sum((pruned.tree.result[,1] < pruned.tree.result[,2]) 
+                           == new.Sepsis[,15])/dim(Sepsis)[1]
+```
+
+
+**Solution:**
+
+- `X`, `THERAPY`, `BEST` are removed while fitting the Virtual Twins (VT) model. 
+- `X`, `Health`, `THERAPY`, `BEST` are removed while fitting the single tree model. The predicted result from the Virtual Twins is included as the response in the single tree model. 
+- The minimal cv error at the 3rd row of the cptable of the CART tree.
+- The original tree is plotted above. 
+- The tree from minimal cv error method happened to be same as the tree from 1se method. It's printed with rpart.plot() above.
+- The cv relative error curve is flat after the third row of the cptable. The plot is printed above.
+- Comparing to `BEST` column of Sepsis dataset, the accuracy from virual twins is ***`r VT.accuracy`***, the accuracy from the singel tree model is ***`r tree.accuracy`***, the accuracy from the pruned singel tree model is ***`r pruned.tree.accuracy`***
+
+
