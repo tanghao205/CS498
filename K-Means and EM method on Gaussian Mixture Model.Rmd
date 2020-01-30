@@ -1,6 +1,6 @@
 ---
-title: 'STAT 542 / CS 598: Homework 5'
-author: "Hao Tang ID: haot3"
+title: 'K-Means and EM method on Gaussian Mixture Model'
+author: "Hao Tang"
 output:
   pdf_document:
     toc: yes
