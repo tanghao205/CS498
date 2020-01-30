@@ -41,7 +41,7 @@ library(splines)
 ```
 
 
-## Question 1 [50 Points] A Simulation Study
+## A Simulation Study
 
 We will perform a simulation study to compare the performance of several different spline methods. Consider the following settings:
 
@@ -264,7 +264,7 @@ boxplot(result[,1], result[,2], result[,3], result[,4],
 - Accorindg to the computation result and boxplots, natural cubic spline is with best error range and smaller standard deviation. I will choose the natural cubic spline model. 
 
 
-## Question 2 [50 Points] Multi-dimensional Kernel and Bandwidth Selection
+## Multi-dimensional Kernel and Bandwidth Selection
 
 Let's consider a regression problem with multiple dimensions. For this problem, we will use the Combined Cycle Power Plant (CCPP) Data Set available at the UCI machine learning repository. The goal is to predict the net hourly electrical energy output (EP) of the power plant. Four variables are available: Ambient Temperature (AT), Ambient Pressure (AP), Relative Humidity (RH), and Exhaust Vacuum (EV). For more details, please go to the [dataset webpage](https://archive.ics.uci.edu/ml/datasets/Combined+Cycle+Power+Plant). We will use a kernel method to model the outcome. A multivariate Gaussian kernel function defines the distance between two points:
 $$ K_{\boldsymbol \lambda}(x_i, x_j) = e^{-\frac{1}{2} \sum_{k=1}^p \left((x_\text{ik} - x_\text{jk})/\lambda_k\right)^2}$$
