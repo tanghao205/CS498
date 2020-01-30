@@ -43,7 +43,7 @@ library(ggplot2)
 library(ggpubr)
 ```
 
-## Question 1 [50 Points] K-Means Clustering
+## K-Means Clustering
 
 Let's consider coding a K-means algorithm. Perform the following: 
 
@@ -302,7 +302,7 @@ ggarrange(q1, q2, ncol = 2, nrow = 1)
    
    
 
-## Question 2 [50 Points] Two-dimensional Gaussian Mixture Model
+## Two-dimensional Gaussian Mixture Model
 
 We consider an example of the EM algorithm, which fits a Gaussian mixture model to the Old Faithful eruption data. For a demonstration of this problem, see the figure provided on [Wikipedia](https://en.wikipedia.org/wiki/Expectation%E2%80%93maximization_algorithm). As the end result, we will obtain the distribution parameters of the two underlying distributions. We consider the problem as follows. For this question, you are allowed to use packages that calculate the densities of normal distributions. 
 
