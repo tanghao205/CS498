@@ -1,0 +1,357 @@
+---
+title: 'STAT 542 / CS 598: Homework 1'
+author: "Hao Tang -ID:haot3"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: 2
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '2'
+---
+
+```{r setup, include=FALSE}
+  knitr::opts_chunk$set(include = FALSE)  # TRUE for solution; FALSE for questions set
+  knitr::opts_chunk$set(echo = TRUE)
+  knitr::opts_chunk$set(message = FALSE)
+  knitr::opts_chunk$set(warning = FALSE)
+  knitr::opts_chunk$set(fig.height = 6, fig.width = 8, out.width = '50%', fig.align = "center")
+  options(width = 90)
+```
+
+```{css, echo=FALSE}
+.solution {
+background-color: #e6ffe6;
+}
+```
+
+
+## Question 1 [50 Points] KNN
+
+Write an R function to fit a KNN regression model. Complete the following steps
+
+```{r, echo=TRUE, include=TRUE}
+rm(list = ls(all = TRUE))
+
+list.of.packages <- c("knitr","MASS")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+```
+
+
+a. [15 Points] Write a function `myknn(xtest, xtrain, ytrain, k)` that fits a KNN model that predict a target point or multiple target points `xtest`. Here `xtrain` is the training dataset covariate value, `ytrain` is the training data outcome, and `k` is the number of nearest neighbors. Use the $\ell_2$ norm to evaluate the distance between two points. Please note that you cannot use any additional `R` package within this function. 
+
+**Solution:**
+
+```{r Q1_a, echo=TRUE, include=TRUE}
+
+myknn = function(xtest, xtrain, ytrain, k){
+  
+  # calculate the l2 norm between two points with vector distance in the matrix operation.
+  #   dist ^ 2 = |Vector a - Vector b| ^ 2 
+  # = |Vector a ^ 2 + Vector b ^ 2 - 2 * Vector a * Vector b|
+  dist_mat = t(apply(matrix(rowSums(xtest ^ 2)),1,function(x) x +
+    t(matrix(rowSums(xtrain ^ 2))))) - 2 * xtest %*% t(xtrain)
+  
+  
+  if(k == 1){
+    k.top = t(t(apply(dist_mat,1,order)[1:k,]))
+  } else {
+    k.top = t(apply(dist_mat,1,order)[1:k,])
+  }
+  
+  prediction = apply(k.top, 1, function(x) mean(Y[x[1:length(x)]]))
+  
+  prediction
+}
+
+```
+
+
+
+
+
+b. [10 Points] Generate 1000 observations from a five-dimensional normally distribution:
+$${\cal N}(\mu, \Sigma_{5 \times 5})$$
+where $\mu = (1,2,3,4,5)^\text{T}$ and $\Sigma_{5 \times 5}$ is an autoregressive covariance matrix, with the $(i, j)$th entry equal to $0.5^{|i-j|}$. Then, generate outcome values $Y$ based on the linear model 
+$$Y = X_1 + X_2 + (X_3 - 2.5)^2 + \epsilon$$ 
+where $\epsilon$ follows i.i.d. standard normal distribution. Use `set.seed(1)` right before you generate this entire data. Print the first 
+3 entries of your data.  
+
+**Solution:**
+
+```{r Q1_b, echo=TRUE, include=TRUE}
+
+# The covariance matrix
+j = c(seq(1,5,1))
+c = 0.5 ^ abs(1-j)
+for (i in 2:5){
+     c = rbind(c,0.5 ^ abs(i-j))
+}
+
+#mu
+mu = c(1,2,3,4,5)
+
+#Set seed
+set.seed(1)
+
+#generate numbers
+library(MASS)
+obs = mvrnorm(1000, mu=mu, Sigma = c)
+epsilon = rnorm(1000)
+Y = obs[,1] + obs[,2] + (obs[,3] - 2.5) ^ 2 + epsilon
+data = cbind(obs,Y)
+colnames(data) = c("X1","X2","X3","X4","X5","Y")
+head(data.frame(data),3)
+
+```
+
+
+
+c. [10 Points] Use the first 400 observations of your data as the training data and the rest as testing data. Predict the $Y$ values using your KNN function with `k = 5`. Evaluate the prediction accuracy using mean squared error
+
+$$\frac{1}{N}\sum_i (y_i - \widehat y_i)^2$$
+
+**Solution:**
+
+```{r Q1_c, echo=TRUE, include=TRUE}
+#Generate Training/Testing Data
+Training = data[1:400,]
+Testing = data[401:1000,]
+
+# Prediction to k = 5
+prediction = myknn(Testing[,1:5], Training[,1:5], Training[,6], k = 5)
+
+# Accuracy to k = 5
+accuracy = 1/dim(Testing)[1] * sum((prediction - Testing[,"Y"])^2)
+
+# Make an accuracy function to be applied to batch process with different k values
+getAccuracy = function(trainset,testset,k){
+
+  prediction = myknn(testset[,1:5], trainset[,1:5], trainset[,6], k)
+  
+  accuracy = 1/dim(testset)[1] * sum((prediction - testset[,6])^2)
+  
+  accuracy
+}
+```
+- Here is the first five rows of the prediction to $Y$:
+ 
+  `r head(prediction,5)`
+
+
+- The prediction accuracy is ``r accuracy``.
+
+
+d. [15 Points] Compare the prediction error of a linear model with your KNN model. Consider $k$ being 1, 2, 3, $\ldots$, 9, 10, 15, 20, $\ldots$, 95, 100. Demonstrate all results in a single, easily interpretable figure with proper legends.  
+
+**Solution:**
+```{r Q1_d, echo=TRUE, include=TRUE, fig.align = "center", fig.dim = c(16, 12)}
+# Linear model from training model
+# The instructors want it to be linear combination only, no I(X^2) term
+model = lm(Y ~ ., data = as.data.frame(Training))
+lm.test.accuracy = sum((predict(model,as.data.frame(Testing[,1:5])) -
+      Testing[,6]) ^ 2) / length(Testing[,6])
+
+# The k matrix
+k.matrix = matrix(c(1:10, seq(15,100,5)))
+
+# The train/test accuracy
+accuracy.vector.train = apply(k.matrix, 1, getAccuracy, trainset = Training, testset = Training)
+accuracy.vector.test = apply(k.matrix, 1, getAccuracy, trainset = Training, testset = Testing)
+
+# Figure
+# Plot the accuracy with log scale in x-axis
+plot(dim(Training)[1]/as.vector(k.matrix), log = "x", xlim = c(4,600), ylim = c(-1.0,4.5), 
+type="n", xlab="Degrees of Freedom N/K, log", ylab="Mean Squared Error", 
+cex.lab = 2, cex.axis = 2)
+points(dim(Training)[1]/as.vector(k.matrix), accuracy.vector.test, col="red", cex = 1)
+points(dim(Training)[1]/as.vector(k.matrix), accuracy.vector.train, col="green", cex = 1)
+abline(h = lm.test.accuracy, cex = 4, col = "blue")
+legend("bottomright", pch = c(1,1,NA), cex = 2, col = c("red","green", "blue"),
+legend = c("KNN_testing", "KNN_training", "LM.test.accuracy"), xjust = 1, lty = c(NA,NA,1), 
+y.intersp = 1,x.intersp = 1)
+
+
+```
+
+- Linear Model mean square error is `r lm.test.accuracy`
+- Present linear model accuracy as a line for comparison.
+
+
+## Question 2 [50 Points] Linear Regression through Optimization
+
+Linear regression is most popular statistical model, and the core technique for solving a linear regression is simply inverting a matrix:
+
+$$\widehat{\boldsymbol \beta} = \left(\mathbf{X}^\text{T}\mathbf{X}\right)^{-1} \mathbf{X}^\text{T} \mathbf{y} $$
+However, lets consider alternative approaches to solve linear regression through optimization. We use a gradient descent approach. We know that $\widehat{\boldsymbol \beta}$ can also be expressed as 
+
+$$\widehat{\boldsymbol \beta} = \arg\min \ell(\boldsymbol \beta) = \arg\min \frac{1}{2n} \sum_{i=1}^n (y_i - x_i^\text{T} \boldsymbol \beta)^2.$$
+
+And the gradient can be derived
+
+$$\frac{\partial \ell(\boldsymbol \beta)}{\partial \boldsymbol \beta} = -\frac{1}{n} \sum_{i=1}^n (y_i - x_i^\text{T} \boldsymbol \beta) x_i.$$
+
+To perform the optimization, we will first set an initial beta value, say $\boldsymbol \beta = \mathbf{0}$ for all entries, then proceed with the updating
+
+$$ \boldsymbol \beta^\text{new} = \boldsymbol \beta^\text{old} - \frac{\partial \ell(\boldsymbol \beta)}{\partial \boldsymbol \beta} \times \delta,$$
+
+where $\delta$ is some small constant, say 0.1. We will keep updating the beta values by setting $\boldsymbol \beta^\text{new}$ as the old value and calcuting a new one untill the difference between $\boldsymbol \beta^\text{new}$ and $\boldsymbol \beta^\text{old}$ is less than a prespecified threshold $\epsilon$, e.g., $\epsilon = 10^{-6}$. You should also set a maximum number of iterations to prevent excessively long runing time. 
+
+a. [35 Points] Based on this description, write your own `R` function `mylm_g(x, y, delta, epsilon, maxitr)` to implement this optimization version of linear regression. The output of this function should be a vector of the estimated beta value. 
+
+**Solution:**
+
+```{r Q2_a, echo=TRUE, include=TRUE}
+# Learning Rate
+delta = 0.1
+# The maximum value of the final parameter change
+eps.lr = 10^-6
+
+
+# Gradient Descent Function
+
+mylm_g = function(x, y, delta, epsilon, maxitr){
+  beta = rep(0,dim(x)[2])
+  for (i in 1:maxitr){
+    gradient = (t(x) %*% (x %*% beta - y)) / length(y)
+    if(sqrt(sum((gradient*delta) ^ 2)) < epsilon){
+      break
+    }
+    beta = beta - delta * gradient
+  }
+  beta
+}
+
+
+```
+
+- The output is beta vector with length of columns number from both x and y.
+
+b. [15 Points] Test this function on the Boston Housing data from the `mlbench` package. Documentation is provided [here](https://www.rdocumentation.org/packages/mlbench/versions/2.1-1/topics/BostonHousing) if you need a description of the data. We will remove `medv`, `town` and `tract` from the data and use `cmedv` as the outcome. We will use a scaled and centered version of the data for estimation. Please also note that in this case, you do not need the intercept term. And you should compare your result to the `lm()` function on the same data. Experiment on different `maxitr` values to obtain a good solution. However your function should not run more than a few seconds. 
+
+```{r include = TRUE}
+  library(mlbench)
+  data(BostonHousing2)
+  X = BostonHousing2[, !(colnames(BostonHousing2) %in% c("medv", "town", "tract", "cmedv"))]
+  X = data.matrix(X)
+  X = scale(X)
+  Y = as.vector(scale(BostonHousing2$cmedv))
+```
+
+**Solution:**
+
+```{r Q2_b, echo=TRUE, include=TRUE}
+# Achieve the data
+library(mlbench)
+data(BostonHousing2)
+X = BostonHousing2[, !(colnames(BostonHousing2) %in% c("medv", "town", "tract", "cmedv"))]
+X = data.matrix(X)
+X = scale(X)
+Y = as.vector(scale(BostonHousing2$cmedv))
+
+# Use my gradient descent model to calculate the coefficient
+# Learning rate is 0.1, Epsilon is 10^-6
+# Experiment to maxitr on 100, 1000, 10000, 100000 
+old = Sys.time()
+BH.coefficient_100 = mylm_g(X,Y,delta,eps.lr,100)
+BH.coefficient_1000 = mylm_g(X,Y,delta,eps.lr,1000)
+BH.coefficient_10000 = mylm_g(X,Y,delta,eps.lr,10000)
+BH.coefficient_100000 = mylm_g(X,Y,delta,eps.lr,100000)
+time.diff = as.double(Sys.time() - old)
+
+# Generate the model with lm(), show the coefficient
+BH.model = lm(formula = Y ~ ., data = as.data.frame(cbind(X, Y)))
+BH.model.LM = as.matrix(BH.model$coefficients)
+
+
+
+library(knitr)
+mix = cbind(BH.coefficient_100[1:15,],BH.coefficient_1000[1:15,],
+BH.coefficient_10000[1:15,],BH.coefficient_100000[1:15,],BH.model.LM[2:16,])
+colnames(mix) = c("100","1000","10000","100000","lm")
+kable(mix, caption = "Coefficients Comparison between Different Iteration and lm()")
+```
+
+- Here I tried four maximum iterations: ``100``, ``1000``, ``1000`` and ``100000``.The table above shows the parameters to the 10000 and 100000 iterations have been very close to the result from the ``lm()``. Also, when max iteration is set to equal or larger than 10000 (may be less than 10000), the change of $\beta$ has been smaller than the $\epsilon$ so increasing the max iteration doesn't change the coefficient any more unless we decrease the prespecified threshold. 
+- The table removed the intercept from the coefficients.
+- The processing time is `r time.diff` seconds.
+
+
+
+## Bonus Question [5 Points] The Non-scaled Version
+
+When we do not scale and center the data matrix (both X and Y), it could be challenging to obtain a good solution. Try this with your code, and comment on what you observed and explain why. Can you think of a way to calculate the beta parameters on the original scale using the solution from the previous question? To earn a full 5 point bonus, you must provide a rigors mathematical derivation and also validate that by comparing it to the `lm()` function on the original data.
+
+**Solution:**
+
+- Below is the un-scaled data generation
+
+```{r bonus_1, echo=TRUE, include=TRUE}
+  library(mlbench)
+  data(BostonHousing2)
+  X1 = BostonHousing2[, !(colnames(BostonHousing2) %in% c("medv", "town", "tract", "cmedv"))]
+  X1 = data.matrix(X1)
+  Y1 = as.vector(BostonHousing2$cmedv)
+```
+
+- After plug in the unscaled data, we can see the beta from our function mylm_g never converged due to the great scale difference between features. We may make the learning rate very small so it the beta change from each iteration doesn't jump over the optimal spot, which will make the learning very expensive and the improvement will get more and more slower. 
+
+- So here we start from the result from Q2b and transfrom the coefficient to get the regression coefficient on the original scale.
+
+- Here is the coefficient from the lm() with un-scaled and scaled data.The intercept is omitted. We will use them for comparison later.
+```{r bonus_2, echo=TRUE, include=TRUE}
+beta_unscaled_lm = lm(Y1~X1)$coef[2:16]
+beta_scaled = BH.model.LM
+```
+
+- In the scaled data, we have
+
+$$Y_\text{scaled} = \hat{\boldsymbol \beta_0} +  \sum_{i=1}^n \hat{\boldsymbol \beta_i} \mathbf{z_i} $$
+
+- $z_j$ is defined as $\frac{x_i - \bar{x_i}}{\sigma_i}$
+- The $Y_\text{scaled}$ can be re-written as
+
+$$Y_\text{scaled} = \hat{\beta_0} +  \sum_{i=1}^n \hat{\beta_i} \frac{x_i - \bar{x_i}}{\sigma_i} $$
+
+- Since we don't focus on the intercept and $\bar{x_i}$ is constant from the scaled design matrix, we can transform above fomular to 
+
+$$Y_\text{scaled} = \hat{\beta_0'} +  \sum_{i=1}^n \frac{\hat{\beta_i}}{\sigma_i} x_i$$
+- Also, we have the relation between $Y_\text{scaled}$ and $Y_\text{unscaled}$
+
+$$Y_\text{scaled} = \frac{Y_\text{unscaled} - \bar{Y}_\text{unscaled}}{\sigma_Y}$$
+- From above two fomular, we can present the $Y_\text{unscaled}$ as below with the scaled $x$. We put all the constant to one term as the intercept.
+
+$$Y_\text{unscaled} = \hat{\boldsymbol \beta_0''} + \sum_{i=1}^n \hat{\beta_i} \frac{\sigma_Y}{\sigma_i}x_i $$
+
+- According to above fomular, we need the standard deviation from the un-scaled to do the tranformation. 
+
+```{r bonus_3, echo=TRUE, include=TRUE}
+sigma_X1 = apply(X1,2,sd)
+sigma_Y1 = sd(Y1)
+```
+
+
+- Here is the un-scaled beta from the beta_scaled.
+- And I place them into a table. As below, they are the same.
+
+```{r bonus_4, echo=TRUE, include=TRUE}
+
+beta_unscaled = beta_scaled[2:16] * sigma_Y1 / sigma_X1
+kable(cbind(beta_unscaled,beta_unscaled_lm))
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
