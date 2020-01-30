@@ -27,7 +27,7 @@ background-color: #e6ffe6;
 ```
 
 
-## Question 1 [50 Points] KNN
+## KNN
 
 Write an R function to fit a KNN regression model. Complete the following steps
 
@@ -41,7 +41,7 @@ if(length(new.packages)) install.packages(new.packages)
 ```
 
 
-a. [15 Points] Write a function `myknn(xtest, xtrain, ytrain, k)` that fits a KNN model that predict a target point or multiple target points `xtest`. Here `xtrain` is the training dataset covariate value, `ytrain` is the training data outcome, and `k` is the number of nearest neighbors. Use the $\ell_2$ norm to evaluate the distance between two points. Please note that you cannot use any additional `R` package within this function. 
+a. Write a function `myknn(xtest, xtrain, ytrain, k)` that fits a KNN model that predict a target point or multiple target points `xtest`. Here `xtrain` is the training dataset covariate value, `ytrain` is the training data outcome, and `k` is the number of nearest neighbors. Use the $\ell_2$ norm to evaluate the distance between two points. Please note that you cannot use any additional `R` package within this function. 
 
 **Solution:**
 
@@ -73,7 +73,7 @@ myknn = function(xtest, xtrain, ytrain, k){
 
 
 
-b. [10 Points] Generate 1000 observations from a five-dimensional normally distribution:
+b. Generate 1000 observations from a five-dimensional normally distribution:
 $${\cal N}(\mu, \Sigma_{5 \times 5})$$
 where $\mu = (1,2,3,4,5)^\text{T}$ and $\Sigma_{5 \times 5}$ is an autoregressive covariance matrix, with the $(i, j)$th entry equal to $0.5^{|i-j|}$. Then, generate outcome values $Y$ based on the linear model 
 $$Y = X_1 + X_2 + (X_3 - 2.5)^2 + \epsilon$$ 
@@ -110,7 +110,7 @@ head(data.frame(data),3)
 
 
 
-c. [10 Points] Use the first 400 observations of your data as the training data and the rest as testing data. Predict the $Y$ values using your KNN function with `k = 5`. Evaluate the prediction accuracy using mean squared error
+c. Use the first 400 observations of your data as the training data and the rest as testing data. Predict the $Y$ values using your KNN function with `k = 5`. Evaluate the prediction accuracy using mean squared error
 
 $$\frac{1}{N}\sum_i (y_i - \widehat y_i)^2$$
 
@@ -145,7 +145,7 @@ getAccuracy = function(trainset,testset,k){
 - The prediction accuracy is ``r accuracy``.
 
 
-d. [15 Points] Compare the prediction error of a linear model with your KNN model. Consider $k$ being 1, 2, 3, $\ldots$, 9, 10, 15, 20, $\ldots$, 95, 100. Demonstrate all results in a single, easily interpretable figure with proper legends.  
+d. Compare the prediction error of a linear model with your KNN model. Consider $k$ being 1, 2, 3, $\ldots$, 9, 10, 15, 20, $\ldots$, 95, 100. Demonstrate all results in a single, easily interpretable figure with proper legends.  
 
 **Solution:**
 ```{r Q1_d, echo=TRUE, include=TRUE, fig.align = "center", fig.dim = c(16, 12)}
@@ -181,7 +181,7 @@ y.intersp = 1,x.intersp = 1)
 - Present linear model accuracy as a line for comparison.
 
 
-## Question 2 [50 Points] Linear Regression through Optimization
+## Linear Regression through Optimization
 
 Linear regression is most popular statistical model, and the core technique for solving a linear regression is simply inverting a matrix:
 
@@ -200,7 +200,7 @@ $$ \boldsymbol \beta^\text{new} = \boldsymbol \beta^\text{old} - \frac{\partial 
 
 where $\delta$ is some small constant, say 0.1. We will keep updating the beta values by setting $\boldsymbol \beta^\text{new}$ as the old value and calcuting a new one untill the difference between $\boldsymbol \beta^\text{new}$ and $\boldsymbol \beta^\text{old}$ is less than a prespecified threshold $\epsilon$, e.g., $\epsilon = 10^{-6}$. You should also set a maximum number of iterations to prevent excessively long runing time. 
 
-a. [35 Points] Based on this description, write your own `R` function `mylm_g(x, y, delta, epsilon, maxitr)` to implement this optimization version of linear regression. The output of this function should be a vector of the estimated beta value. 
+a. Based on this description, write your own `R` function `mylm_g(x, y, delta, epsilon, maxitr)` to implement this optimization version of linear regression. The output of this function should be a vector of the estimated beta value. 
 
 **Solution:**
 
@@ -230,7 +230,7 @@ mylm_g = function(x, y, delta, epsilon, maxitr){
 
 - The output is beta vector with length of columns number from both x and y.
 
-b. [15 Points] Test this function on the Boston Housing data from the `mlbench` package. Documentation is provided [here](https://www.rdocumentation.org/packages/mlbench/versions/2.1-1/topics/BostonHousing) if you need a description of the data. We will remove `medv`, `town` and `tract` from the data and use `cmedv` as the outcome. We will use a scaled and centered version of the data for estimation. Please also note that in this case, you do not need the intercept term. And you should compare your result to the `lm()` function on the same data. Experiment on different `maxitr` values to obtain a good solution. However your function should not run more than a few seconds. 
+b. Test this function on the Boston Housing data from the `mlbench` package. Documentation is provided [here](https://www.rdocumentation.org/packages/mlbench/versions/2.1-1/topics/BostonHousing) if you need a description of the data. We will remove `medv`, `town` and `tract` from the data and use `cmedv` as the outcome. We will use a scaled and centered version of the data for estimation. Please also note that in this case, you do not need the intercept term. And you should compare your result to the `lm()` function on the same data. Experiment on different `maxitr` values to obtain a good solution. However your function should not run more than a few seconds. 
 
 ```{r include = TRUE}
   library(mlbench)
@@ -281,7 +281,7 @@ kable(mix, caption = "Coefficients Comparison between Different Iteration and lm
 
 
 
-## Bonus Question [5 Points] The Non-scaled Version
+## The Non-scaled Version
 
 When we do not scale and center the data matrix (both X and Y), it could be challenging to obtain a good solution. Try this with your code, and comment on what you observed and explain why. Can you think of a way to calculate the beta parameters on the original scale using the solution from the previous question? To earn a full 5 point bonus, you must provide a rigors mathematical derivation and also validate that by comparing it to the `lm()` function on the original data.
 
