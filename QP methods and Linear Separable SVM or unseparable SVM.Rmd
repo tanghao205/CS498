@@ -1,4 +1,4 @@
----
+--- 
 title: 'QP methods and Linear Separable SVM or unseparable SVM'
 author: ""
 output:
