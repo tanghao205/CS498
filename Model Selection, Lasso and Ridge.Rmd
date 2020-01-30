@@ -1,6 +1,6 @@
 ---
-title: 'STAT 542 / CS 598: Homework 2'
-author: "Hao Tang ID: haot3"
+title: 'Model Selection, Lasso and Ridge'
+author: "Hao Tang"
 output:
   pdf_document:
     toc: yes
