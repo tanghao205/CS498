@@ -1,6 +1,6 @@
 ---
-title: 'STAT 542 / CS 598: Homework 3'
-author: "Hao Tang ID: haot3"
+title: 'Simulation Study on Spline and Multi-dimensional Kernel Regression'
+author: "Hao Tang"
 output:
   pdf_document:
     toc: yes
