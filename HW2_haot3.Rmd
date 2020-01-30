@@ -1,0 +1,493 @@
+---
+title: 'STAT 542 / CS 598: Homework 2'
+author: "Hao Tang ID: haot3"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: 2
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '2'
+---
+
+```{r setup, include=FALSE}
+  knitr::opts_chunk$set(include = FALSE)  # TRUE for solution; FALSE for questions set
+
+  knitr::opts_chunk$set(echo = TRUE)
+  knitr::opts_chunk$set(message = FALSE)
+  knitr::opts_chunk$set(warning = FALSE)
+  knitr::opts_chunk$set(fig.height = 6, fig.width = 8, out.width = '50%', fig.align = "center")
+  options(width = 90)
+```
+
+```{css, echo=FALSE}
+.solution {
+background-color: #e6ffe6;
+}
+```
+
+```{r, echo=TRUE, include=TRUE}
+rm(list = ls(all = TRUE))
+
+list.of.packages <- c("knitr","glmnet", "leaps", "MASS", "tidyverse")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+library(knitr)
+library(glmnet)
+
+```
+
+## Question 1 [20 Points] Linear Model Selection
+
+We will use the Boston Housing data again. This time, we do not scale the covariate. We will still remove `medv`, `town` and `tract` from the data and use `cmedv` as the outcome. If you do not use R, you can download a `.csv' file from the course website. 
+
+```{r include = TRUE, echo=TRUE}
+  library(mlbench)
+  data(BostonHousing2)
+  BH = BostonHousing2[, !(colnames(BostonHousing2) %in% c("medv", "town", "tract"))]
+  lm(cmedv~., data = BH)
+```
+
+Answer the following questions:
+
+a. [5 Points] Report the most significant variable from this full model with all features.
+
+**Solution:**
+
+```{r Q1a, include = TRUE, echo = TRUE}
+p = dim(BH)[2] - 1
+n = dim(BH)[1]
+full.model = lm(cmedv~., data = BH)
+which.min(summary(full.model)$coefficients[,4])
+```
+
+- The most significant variable from full model is **`r names(which.min(summary(full.model)$coefficients[,4]))`**
+
+
+
+b. [5 Points] Starting from this full model, use stepwise regression with both forward and backward and BIC criterion to select the best model. Which variables are removed from the full model?
+
+**Solution:**
+
+
+```{r Q1b, include = TRUE, echo = TRUE}
+stepBIC = step(full.model, direction = "both", trace = 0, k = log(n))
+attr.stay = attributes(stepBIC$term)$term.labels
+attr.removed = colnames(BH)[!colnames(BH) %in% c(attr.stay,"cmedv")]
+stepBIC$coefficients
+```
+- Above is the best model coefficients
+
+- Here are the variables removed from the full model
+**`r attr.removed`**
+
+
+c. [5 Points] Starting from this full model, use the best subset selection and list the best model of each model size. 
+
+**Solution:**
+
+```{r Q1c, include = TRUE, echo = TRUE}
+
+# Here is the best model of each model size
+library(leaps)
+reg.full = regsubsets(cmedv~., data = BH, nvmax = p)
+rs = summary(reg.full)
+# Print model with coefficients
+# for (i in 1:p){
+#   print(paste("Best Model with size",i))
+#   print(coef(reg.full,i))
+# }
+# Use rs$which to show best model of each size per @200 in Piazza
+rs$which
+```
+
+- Above I printed the best model in each model size
+
+d. [5 Points] Use the Cp criterion to select the best model from part c). Which variables are removed from the full model? What is the most significant variable?
+
+**Solution:**
+
+```{r Q1d, include = TRUE, echo = TRUE}
+# Manually calculate the Cp
+# msize = apply(rs$which,1,sum)
+# Cp = rs$rss/(summary(full.model)$sigma^2) + 2*msize - n;
+
+
+plot(rs$cp, xlab = "Number of Variables", ylab = "Cp")
+points(which.min(rs$cp), rs$cp[which.min(rs$cp)], pch = 20, col = "red")
+# Selete best model
+which.min(rs$cp)
+# Variable removed
+removed.var = colnames(BH[,-3])[!rs$which[which.min(rs$cp),2:16]]
+# Same as result from AIC or BIC criteria
+refit.model = lm(cmedv ~ . - lon - lat - indus - age, data = BH)
+# Most significant variable
+which.min(summary(refit.model)$coef[,4])
+```
+- Best model is with the following variable:
+```{r, include = TRUE, echo = TRUE}
+  coef(reg.full, which.min(rs$cp))
+```  
+
+- Here are the variables removed:
+   **`r removed.var`**  
+   
+- According to the re-fit model coefficient significance, the most significant variable is **`r names(which.min(summary(refit.model)$coef[,4]))`**  
+
+
+## Question 2 (50 Points) Code Your Own Lasso
+
+For this question, we will write our own Lasso code. You are not allowed to use any built-in package that already implements Lasso. First, we will generate simulated data. Here, only $X_1$, $X_2$ and $X_3$ are important, and we will not consider the intercept term. 
+
+```{r include = TRUE,echo = TRUE}
+  library(MASS)
+  set.seed(1)
+  n = 200
+  p = 200
+  
+  # generate data
+  V = matrix(0.2, p, p)
+  diag(V) = 1
+  X = as.matrix(mvrnorm(n, mu = rep(0, p), Sigma = V))
+  y = X[, 1] + 0.5*X[, 2] + 0.25*X[, 3] + rnorm(n)
+  # X1 and y1 Keep the un-scaled result for following analysis
+  X1=X
+  y1=y
+  # we will use a scaled version 
+  X = scale(X)
+  y = scale(y)
+```
+
+As we already know, coordinate descent is an efficient approach for solving Lasso. The algorithm works by updating one parameter at a time, and loop around all parameters until convergence. 
+
+a. [10 Points] Hence, we need first to write a function that updates just one parameter, which is also known as the soft-thresholding function. Construct the function in the form of `soft_th <- function(b, lambda)`, where `b` is a number that represents the one-dimensional linear regression solution, and `lambda` is the penalty level. The function should output a scaler, which is the minimizer of 
+$$(x - b)^2 + \lambda |b|$$
+
+**Solution:**
+
+```{r Q2a, include = TRUE, echo = TRUE}
+ # Soft-thresholding function
+soft_th <- function(b, lambda){
+  sign(b) * max(0, (abs(b) - lambda/2))
+}
+```
+
+
+
+b. [10 Points] Now lets pretend that at an iteration, the current parameter $\boldsymbol \beta$ value is given below (as `beta_old`, i.e., $\boldsymbol \beta^{\text{old}}$). Apply the above soft-thresholding function to update all $p$ parameters sequencially one by one to complete one "loop" of the updating scheme. Please note that we use the Gauss-Seidel style coordinate descent, in which the update of the next parameter is based on the new values of previous entries. Hence, each time a parameter is updated, you should re-calculate the residual 
+$$\mathbf{r} = \mathbf{y} - \mathbf{X} \boldsymbol \beta$$ 
+so that the next parameter update reflects this change. After completing this one enrire loop, print out the first 3 observations of $\mathbf{r}$ and the nonzero entries in the updated $\boldsymbol \beta^{\text{new}}$ vector. For this question, use `lambda` = 0.7 and
+```{r  include = TRUE, echo = TRUE}
+   beta_old = rep(0, p)
+```
+
+**Solution:**
+```{r Q2b, include = TRUE, echo = TRUE}
+
+   p = dim(X)[2]
+   beta_new =  beta_old
+   lambda = 0.7
+   # Residual Initialization
+   r = y - X %*% beta_new
+
+   for(j in 1:p){
+     
+     # when beta i is being minimized, bete j is fixed, here i!=j
+     # r + X[,j]*b[j] = y - X[,-j] %*% b[-j]  
+     numer = t(X[,j]) %*% (r + X[,j]*beta_new[j])
+     denom = crossprod(X[,j])   
+     beta_new[j] = soft_th(numer/denom, lambda)
+
+     # recaldulate the residuals
+     r = y - X %*% beta_new
+     # if (j <= 3){
+       # print(paste("r value in",j,"round:"))
+       # print(r[1:3])
+       # print(paste("Nonzero coefficients in Beta in",j,"round:"))
+       # print(beta_new[which(beta_new!= 0)])
+       # b[3] shrink in the soft-thresholding to 0 since it's abs less than lambda/2 = 0.35
+     # }
+   }
+ print(paste("First 3 observation of r:"))
+ print(r[1:3])
+ print(paste("Nonzero coefficients in Beta in:"))
+ print(beta_new[which(beta_new!= 0)])
+   
+```
+
+- Here are the 3 observations of r: **`r r[1:3]`**
+- The nonzero entries in the updated $\beta^\text{new}$: **`r beta_new[which(beta_new!= 0)]`** 
+
+
+c. [25 Points] Now, let us finish the entire Lasso algorithm. We will write a function `myLasso(X, y, lambda, tol, maxitr)`. Set the tolerance level `tol` = 1e-5, and `maxitr` = 100 as the default value. Use the "one loop" code that you just wrote in the previous question, and integrate that into a grand for-loop that will continue updating the parameters up to `maxitr` runs. Check your parameter updates once in this grand loop and stop the algorithm once the $\ell_1$ distance between $\boldsymbol \beta^{\text{new}}$ and $\boldsymbol \beta^{\text{old}}$ is smaller than `tol`. Use `  beta_old = rep(0, p)` as the initial value, and `lambda` = 0.3. After the algorithm converges, report the following: i) the number of iterations took; ii) the nonzero entries in the final beta parameter estimate, and iii) the first three observations of the residual. Please write your algorithm as efficient as possible.
+
+**Solution:**
+
+```{r Q2c, include = TRUE, echo = TRUE}
+lambda = 0.3 # lambda reset to 0.3
+tol = 1e-5
+maxitr = 100
+mylasso = function(X, y, lambda, tol, maxitr){
+  p = dim(X)[2]
+  Beta_new = rep(0, p)
+  r = y - X %*% Beta_new
+  already = FALSE
+  for (i in 1:maxitr){
+     Beta_old = Beta_new
+     
+     for(j in 1:p){
+     # when beta i is being minimized, bete j is fixed, here i!=j
+     # r + X[,j]*b[j] = y - X[,-j] %*% b[-j]  
+     numer = t(X[,j]) %*% (r + X[,j]*Beta_new[j])
+     denom = crossprod(X[,j])   
+     Beta_new[j] = soft_th(numer/denom, lambda)
+     # recaldulate the residuals
+     r = y - X %*% Beta_new
+     }
+     # Stop when L1 norm is smaller than tol
+     if (sum(abs((Beta_new - Beta_old))) < tol){
+       print("The totla number of iterations took:")
+       print(i)
+       print("The nonzero entries in the final beta parameter estimate:")
+       print(Beta_new[which(Beta_new!= 0)])
+       print("The first 3 observations of r:")
+       print(r[1:3])
+       already = TRUE
+       break
+     }
+  }
+  if(already == FALSE){
+    print("The totla number of iterations took:")
+    print(i)
+    print("The nonzero entries in the final beta parameter estimate:")
+    print(Beta_new[which(Beta_new!= 0)])
+    print("The first 3 observations of r:")
+    print(r[1:3])
+  }
+  Beta_new
+}
+mylasso.coef = mylasso(X, y, lambda, tol, maxitr)
+```
+
+- 1) The numbr of iteration to converge is `9`. 
+- 2) The nonzeroentries in the final beta paramter estimate is printed above. 
+- 3) The first three observations of residual is printed above.
+
+
+d. [5 Points] Now we have our own Lasso function, let's check the result and compare it with the `glmnet` package. Note that for the glmnet package, their `lambda` should be set as half of ours. Comment on the accuracy of the algorithm that we wrote. Please note that the distance of the two solutions should not be larger than 0.005.
+
+**Solution:**
+
+```{r Q2d, include = TRUE, echo = TRUE}
+library(glmnet)
+lambda = 0.3
+glm.result = glmnet(X, y,alpha = 1, lambda = lambda/2)
+
+# The lambda is setto 0.3 in part c
+# The glm coef result included 201 elements where the 1st is just the intercept
+glm.coef = coef(glm.result,s = lambda/2)[-1]
+# L1 distance
+sum(abs(mylasso.coef - glm.coef))
+sum(abs(mylasso.coef - glm.coef)) < 0.005
+```
+
+- The L1 distance **`r sum(abs(mylasso.coef - glm.coef))`** between glmnet coefficient and mylasso coefficient are less than `0.005`.
+
+## Question 3 (30 Points) Cross-Validation for Model Selection
+
+We will use the [Walmart Sales data](https://www.kaggle.com/anshg98/walmart-sales#Train.csv) provided on Kaggle. For this question, we will use only the Train.csv file. The file is also available at [here](https://teazrq.github.io/stat432/homework.html). 
+
+a. [10 Points] Do the following to process the data:
+    + Read data into R
+    + Convert character variables into factors
+    + Remove `Item_Identifier`
+    + Further convert all factors into dummy variables
+
+**Solution:**
+```{r Q3a, echo = TRUE, include = TRUE}
+library(tidyverse)
+walmart.origin <- data.frame(read_csv("H:\\UIUC MCS-DS\\Pratical Statistical Learning\\Homework\\HW2\\Train.csv"))
+character.features = sapply(walmart.origin,class) == "character"
+c = as.vector(which(character.features == TRUE))
+walmart = walmart.origin
+for (i in c){
+    walmart[,i] = factor(walmart[,i])
+}
+# 6 factors and 5 numeric columns are left after 'Item_Identifier` removal 
+walmart = walmart[,!(names(walmart) %in% c("Item_Identifier"))]
+# The model.matrix() omit the NA value automatically
+walmartsales = model.matrix( ~ . -1, data = walmart)
+# walmartsales include all variables (response, dummy predictors or numeric predictors)
+#with dimension of 4650 X 41.
+X.walmart = walmartsales[,-41]
+y.walmart = log(walmartsales[,41])
+
+```
+
+
+b. [20 Points] Use all variables to model the outcome `Item_Outlet_Sales` in its $log$ scale. First, we randomly split the data into two parts with equal size. Make sure that you set a random seed so that the result can be replicated. Treat one as the training data, and the other one as the testing data. For the training data, perform the following:
+    + Use cross-validation to select the best Lasso model. Consider both `lambda.min` and `lambda.1se`. Provide additional information to summarize the model fitting result
+    + Use cross-validation to select the best Ridge model. Consider both `lambda.min` and `lambda.1se`. Provide additional information to summarize the model fitting result
+    + Test these four models on the testing data and report and compare the prediction accuracy
+  
+**Solution:**  
+
+```{r Q3b1, echo = TRUE, include = TRUE}
+
+# Here are all the columns with all 0 values. 
+# They're supposed to be removed from the train and test set.
+all.zero.columns = which(apply(X.walmart,2,sum)==0)
+X.walmart = X.walmart[, -as.vector(all.zero.columns)]
+
+
+# Split the dataset into train set and test set
+set.seed(1)
+train = sample(1:nrow(X.walmart), nrow(X.walmart)/2)
+test = (-train)
+y.test = y.walmart[test]
+y.train = y.walmart[train]
+X.train = X.walmart[train,]
+X.test = X.walmart[test,]
+
+# CROSS VALIDATION MODEL
+
+## LASSO result
+lasso.model = glmnet(X.train, y.train, alpha = 1)
+cv.lasso = cv.glmnet(X.train, y.train, alpha = 1)
+lasso.lambda.min = cv.lasso$lambda.min
+lasso.lambda.1se = cv.lasso$lambda.1se
+
+## More info to the LASSO
+nonzero.lasso.min = rownames(coef(cv.lasso, s =
+lasso.lambda.min))[coef(cv.lasso, s =
+lasso.lambda.min)[,1]!=0][-1]
+nonzero.lasso.1se = rownames(coef(cv.lasso, s =
+lasso.lambda.1se))[coef(cv.lasso, s =
+lasso.lambda.1se)[,1]!=0][-1]
+
+
+## RIDGE result
+ridge.model = glmnet(X.train , y.train, alpha = 0)
+cv.ridge = cv.glmnet(X.train , y.train, alpha = 0)
+ridge.lambda.min = cv.ridge$lambda.min
+ridge.lambda.1se = cv.ridge$lambda.1se
+
+## More info to the RIDGE
+nonzero.ridge.min = rownames(coef(cv.ridge, s =
+ridge.lambda.min))[coef(cv.ridge, s =
+ridge.lambda.min)[,1]!=0][-1]
+nonzero.ridge.1se = rownames(coef(cv.ridge, s =
+ridge.lambda.1se))[coef(cv.ridge, s =
+ridge.lambda.1se)[,1]!=0][-1]
+```
+
+
+```{r Q3b2, echo = TRUE, include = TRUE}
+# Train ACCURACY
+
+## LASSO TRAIN ACCURACY
+lasso.pred.min.tr = predict(lasso.model, s = lasso.lambda.min, newx = X.train)
+accuracy.lasso.min.tr = mean((lasso.pred.min.tr - y.train)^2)
+
+lasso.pred.1se.tr = predict(lasso.model, s = lasso.lambda.1se, newx = X.train)
+accuracy.lasso.1se.tr = mean((lasso.pred.1se.tr - y.train)^2)
+
+## RIDGE TRAIN ACCURACY
+ridge.pred.min.tr = predict(ridge.model, s = ridge.lambda.min, newx = X.train)
+accuracy.ridge.min.tr = mean((ridge.pred.min.tr - y.train)^2)
+
+ridge.pred.1se.tr = predict(ridge.model, s = ridge.lambda.1se, newx = X.train)
+accuracy.ridge.1se.tr = mean((ridge.pred.1se.tr - y.train)^2)
+
+Train.Accuracy = round(c(accuracy.lasso.min.tr, accuracy.lasso.1se.tr, 
+accuracy.ridge.min.tr, accuracy.ridge.1se.tr),3)
+
+
+# Test ACCURACY
+
+## LASSO TEST ACCURACY
+lasso.pred.min = predict(lasso.model, s = lasso.lambda.min, newx = X.test)
+accuracy.lasso.min = mean((lasso.pred.min - y.test)^2)
+
+lasso.pred.1se = predict(lasso.model, s = lasso.lambda.1se, newx = X.test)
+accuracy.lasso.1se = mean((lasso.pred.1se - y.test)^2)
+
+## RIDGE TEST ACCURACY
+ridge.pred.min = predict(ridge.model, s = ridge.lambda.min, newx = X.test)
+accuracy.ridge.min = mean((ridge.pred.min - y.test)^2)
+
+ridge.pred.1se = predict(ridge.model, s = ridge.lambda.1se, newx = X.test)
+accuracy.ridge.1se = mean((ridge.pred.1se - y.test)^2)
+
+Test.Accuracy = round(c(accuracy.lasso.min, accuracy.lasso.1se,
+accuracy.ridge.min, accuracy.ridge.1se),3)
+
+# The intercept should be substracted from all the nonzero coefficients.
+p.lasso.min = length(nonzeroCoef(coef(lasso.model, s = lasso.lambda.min))) - 1
+p.lasso.1se = length(nonzeroCoef(coef(lasso.model, s = lasso.lambda.1se))) - 1
+p.ridge.min = length(nonzeroCoef(coef(ridge.model, s = ridge.lambda.min))) - 1
+p.ridge.1se = length(nonzeroCoef(coef(ridge.model, s = ridge.lambda.1se))) - 1
+
+Predictor.No = c(p.lasso.min,p.lasso.1se,p.ridge.min,p.ridge.1se)
+LAMBDA = c("lasso.min","lasso.1se","ridge.min","ridge.1se")
+kable(cbind(LAMBDA,Train.Accuracy, Test.Accuracy,Predictor.No), digits = 2, 
+caption = "Lasso and Ridge accuracy on Train and Test Set")
+
+```
+
++ **Use cross-validation to select the best Lasso model. Consider both `lambda.min` and `lambda.1se`. Provide additional information to summarize the model fitting result**
+- For LASSO, based on the accuracy, the accuracy with lambda.min is better than the accuracy with lambda.1se on the train set because of defnition of $\lambda_\text{min}$ and $\lambda_\text{1se}$. The difference are listed in the table. Actually $\lambda_\text{min}$ average error is smaller than all other $\lambda$ in the cross-validation. $\lambda_\text{1se}$ provides much simpler model with 3 predictors only comparing to 9 predictors with the $\lambda_\text{min}$.The $\lambda_\text{1se}$ will be more stable. The error from $\lambda_\text{1se}$ is 1 standard error from the average error from the $\lambda_\text{min}$. Here the shrinkage doesn't lower the test MSE. The simpler model from $\lambda_\text{1se}$ doesn't provide better prediction.
+
++ **Use cross-validation to select the best Lasso model. Consider both `lambda.min` and `lambda.1se`. Provide additional information to summarize the model fitting result**
+- For RIDGE, based on the accuracy, the accuracy with lambda.min is better than the accuracy with lambda.1se on the train set because of defnition of $\lambda_\text{min}$ and $\lambda_\text{1se}$. The difference are listed in the table. Actually $\lambda_\text{min}$ average error is smaller than all other $\lambda$ in the cross-validation. Model size from both $\lambda_\text{min}$ and $\lambda_\text{1se}$ are the same since RIDGE will not subset the variables but model with $\lambda_\text{1se}$ is indeed simpler because of shrinkage.
+The error from $\lambda_\text{1se}$ is 1 standard error from the average error from the $\lambda_\text{min}$. Here the shrinkage doesn't lower the test MSE. Here the shrinkage doesn't lower the test MSE. Prediction on $\lambda_\text{min}$ is better than $\lambda_\text{1se}$.
+
++ **Test these four models on the testing data and report and compare the prediction accuracy**
+- Please see the table above, the model with $\lambda_\text{min}$ in lasso is with best test accuracy. Generally in this problem, lasso test accuracy is better than ridge test accuracy. And $\lambda_\text{min}$ test accuracy is better than $\lambda_\text{1se}$ test accuracy.  
+
+## Bonus Question [5 Points] Replicating `glmnet` Results
+
+You probably noticed that our results from `myLasso` function are not exactly the same as `glmnet`. What are the possible reasons that cause this difference? Try to obtain a closer solution with some minor twists. You should be able to obtain a solution that is at the 1e-5 level distance from `glmnet`. 
+
+**Solution:**
+
+- According to glmnet expression in this link (https://web.stanford.edu/~hastie/glmnet/glmnet_alpha.html), the method is based on standardized y wit "1/N" variance formula. 
+
+- According to the expression from the author of glmnet() in this link(https://web.stanford.edu/~hastie/TALKS/glmnet.pdf), the glmnet() has the folloiwng expression with $\beta_j^\text{*}$ before it's plugged into the soft-thresholding function.
+$$\beta_j^\text{*} = \frac{1}{N}\sum^N_\text{i=1}x_\text{ij}r_\text{ij}$$
+- After reviewing glmnet's mirror version on Trevor Hastie's github page, I can't find the 1/N factor but do fund the cross-product to X column in the calculation. So glmnet shall be also based on the X with "1/N" in variance/scale formula.
+
+- I re-caluated the input X and y with "1/N" variance formula as below. 
+
+
+```{r Bonus, echo = TRUE, include = TRUE}
+
+# X1 and y1 are from the question 2 without scale() processing.
+
+X1.mean = colMeans(X1)
+X1.z_mean = sweep(X1,2,X1.mean)
+sigma.x = sqrt(colSums(X1.z_mean ^ 2) / dim(X1)[1])
+X1.scaled = sweep(X1.z_mean, 2, sigma.x, '/')
+
+y1.mean = mean(y1)
+y1.z_mean = y1 - y1.mean
+sigma.y = sqrt(sum(y1.z_mean ^ 2)/dim(X1)[1])
+y.scaled = y1.z_mean/sigma.y
+
+lambda = 0.3
+
+# mylasso result
+mylasso.coef1 = mylasso(X1.scaled, y.scaled, lambda, tol, maxitr)
+
+# glmnet result
+glmnet.coef1 = coef(glmnet(X1.scaled,y.scaled,lambda = lambda/2))[-1]
+
+# The L1-norm difference
+updated.diff = sum(abs(mylasso.coef1 - glmnet.coef1))
+updated.diff
+```
+
+- The L1-norm of coefficients' difference between mylasso and glmnet is `r updated.diff`. It's with order of 1e-5.
+
+
