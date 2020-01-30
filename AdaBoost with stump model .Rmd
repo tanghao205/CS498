@@ -1,6 +1,4 @@
 ---
-title: 'STAT 542 / CS 598: Homework 7'
-author: "Hao Tang ID: haot3"
 
 header-includes:
   - \usepackage[ruled,vlined,linesnumbered]{algorithm2e}
@@ -47,7 +45,7 @@ library(rpart)
 ```
 
 
-## Question 1 [100 Points] AdaBoost with stump model
+## AdaBoost with stump model
 
 Let's write our own code for a one-dimensional AdaBoost using a tree stump model as the weak learner. 
 
