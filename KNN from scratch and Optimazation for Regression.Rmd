@@ -1,6 +1,6 @@
 ---
-title: 'STAT 542 / CS 598: Homework 1'
-author: "Hao Tang -ID:haot3"
+title: 'KNN from scratch and Optimazation for Regression'
+author: "Hao Tang"
 output:
   pdf_document:
     toc: yes
