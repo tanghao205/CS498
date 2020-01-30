@@ -1,6 +1,6 @@
 ---
 title: 'Random Forest and Tree on Virtual Twins Model'
-author: "Hao Tang "
+author: "Hao Tang"
 output:
   pdf_document:
     toc: yes
